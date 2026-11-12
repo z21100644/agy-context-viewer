@@ -1,0 +1,34 @@
+{
+  "name": "antigravity-context-viewer",
+  "version": "1.0.0",
+  "description": "Antigravity 極簡對話上下文與生成效能監控面板（繁體中文版）",
+  "main": "cli.js",
+  "bin": {
+    "antigravity-context-viewer": "./cli.js",
+    "antigravity-meter": "./cli.js"
+  },
+  "engines": {
+    "node": ">=22.4.0"
+  },
+  "scripts": {
+    "install-patch": "node cli.js install",
+    "install-meter": "node cli.js install",
+    "live": "node cli.js live",
+    "status": "node cli.js status",
+    "check": "node cli.js check",
+    "restore": "node cli.js restore",
+    "uninstall-patch": "node cli.js restore",
+    "build:renderer": "node scripts/build-renderer.js",
+    "pretest": "node scripts/build-renderer.js",
+    "test": "node --test meter-core.test.js meter-renderer.test.js meter-integration.test.js",
+    "package": "node scripts/package-release.js"
+  },
+  "keywords": [
+    "antigravity",
+    "context-viewer",
+    "context-window",
+    "token-meter",
+    "electron-patch"
+  ],
+  "license": "MIT"
+}
