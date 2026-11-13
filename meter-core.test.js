@@ -50,16 +50,30 @@ test('summarize 精確解析伺服器回傳用量、快取拆分與串流速度'
   assert.equal(res.speed.label, '流暢');
   assert.equal(res.modelLabel, 'Gemini 2.5 Pro');
 
-  assert.deepEqual(classifySpeed(95), { level: 'fast', label: '極速', tone: 'good' });
-  assert.deepEqual(classifySpeed(50), { level: 'smooth', label: '流暢', tone: 'good' });
-  assert.deepEqual(classifySpeed(22.6), { level: 'fair', label: '良好', tone: 'warn' });
-  assert.deepEqual(classifySpeed(6.8), { level: 'slow', label: '偏慢', tone: 'danger' });
+  assert.deepEqual(classifySpeed(60), { level: 'fast', label: '極速', tone: 'good' });
+  assert.deepEqual(classifySpeed(25), { level: 'smooth', label: '流暢', tone: 'good' });
+  assert.deepEqual(classifySpeed(10), { level: 'fair', label: '良好', tone: 'warn' });
+  assert.deepEqual(classifySpeed(9.9), { level: 'slow', label: '偏慢', tone: 'danger' });
   assert.equal(classifySpeed(null), null);
+
+  const tinyDur = summarize({
+    chatModel: {
+      timeToFirstToken: '0.02s',
+      streamingDuration: '0.02s',
+      usage: { inputTokens: 1000, outputTokens: 50 }
+    }
+  });
+  assert.equal(tinyDur.speed.tps, null);
+  assert.equal(tinyDur.speed.streamingTps, null);
 });
 
-test('formatModelLabel 優雅格式化內部佔位符模型名稱', () => {
+test('formatModelLabel 優雅格式化內部佔位符模型名稱並去除思考檔位後綴', () => {
   assert.equal(formatModelLabel('MODEL_PLACEHOLDER_M37'), 'Model M37');
   assert.equal(formatModelLabel('Claude Sonnet 4.5'), 'Claude Sonnet 4.5');
+  assert.equal(formatModelLabel('Gemini 4 Hydrogen (High)'), 'Gemini 4 Hydrogen');
+  assert.equal(formatModelLabel('Gemini 4 Carbon (Medium)'), 'Gemini 4 Carbon');
+  assert.equal(formatModelLabel('Claude Opus 5.5 (Extended Thinking)'), 'Claude Opus 5.5');
+  assert.equal(formatModelLabel('Model X (Preview)'), 'Model X (Preview)');
   assert.equal(formatModelLabel(''), '');
 });
 

@@ -18,9 +18,9 @@
   function classifySpeed(tps) {
     const v = number(tps);
     if (v === null) return null;
-    if (v >= 80) return { level: 'fast', label: '極速', tone: 'good' };
-    if (v >= 35) return { level: 'smooth', label: '流暢', tone: 'good' };
-    if (v >= 15) return { level: 'fair', label: '良好', tone: 'warn' };
+    if (v >= 60) return { level: 'fast', label: '極速', tone: 'good' };
+    if (v >= 25) return { level: 'smooth', label: '流暢', tone: 'good' };
+    if (v >= 10) return { level: 'fair', label: '良好', tone: 'warn' };
     return { level: 'slow', label: '偏慢', tone: 'danger' };
   }
 
@@ -30,7 +30,12 @@
     if (!trimmed) return '';
     const placeholder = trimmed.match(/^MODEL_PLACEHOLDER_([A-Z0-9_-]+)$/i);
     if (placeholder) return `Model ${placeholder[1]}`;
-    return trimmed;
+    return trimmed
+      .replace(
+        /\s*\((?:minimal|low|medium|high|max|auto|thinking|extended thinking|(?:minimal|low|medium|high|max)\s+thinking)\)\s*$/i,
+        ''
+      )
+      .trim();
   }
 
   function getModelPoolKey(raw) {
@@ -312,7 +317,7 @@
     const duration = ttft !== null && streamingSec !== null ? ttft + streamingSec : (ttft ?? streamingSec ?? null);
 
     let tps = null;
-    if (output && duration && duration > 0) {
+    if (output && duration && duration > 0.05) {
       tps = Number((output / duration).toFixed(1));
     }
     let streamingTps = null;

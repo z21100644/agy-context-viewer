@@ -362,6 +362,7 @@ test('對話頁渲染：精確呈現容量百分比、快取拆分、生成速�
     assert.equal(h.el('speed-val').textContent, '50 tok/s');
     assert.equal(h.el('speed-val').getAttribute('data-speed-tier'), 'smooth');
     assert.equal(h.el('badge-speed-wrap').getAttribute('data-speed-tier'), 'smooth');
+    assert.equal(h.el('speed-val').title, '純串流 63 tok/s');
     assert.ok(h.el('ctx-tip-detail').textContent.includes('50 tok/s (流暢)'));
     assert.equal(h.el('speed-ttft').textContent, '0.62s');
     assert.equal(h.el('speed-duration').textContent, '3s');
@@ -433,12 +434,14 @@ test('低速個位數 tok/s 提醒指示：面板標籤顯示偏慢告警、頂�
   try {
     await h.flush();
     assert.equal(h.el('speed-amount').textContent, '6 tok/s');
+    assert.equal(h.el('model').textContent, 'Gemini 4 Carbon');
+    assert.equal(h.el('model').title, 'Gemini 4 Carbon (Medium)');
     assert.equal(h.el('badge-speed-wrap').getAttribute('data-speed-tier'), 'slow');
     assert.equal(h.el('speed-badge').textContent, '偏慢');
     assert.ok(h.el('speed-badge').classList.contains('pill-danger'));
     assert.equal(h.el('speed-val').getAttribute('data-speed-tier'), 'slow');
     assert.ok(h.el('ctx-tip-detail').textContent.includes('6 tok/s (偏慢)'));
-    assert.ok(h.el('speed-val').title.includes('首字延遲占耗時'));
+    assert.equal(h.el('speed-val').title, '純串流 112.5 tok/s · 首字占 95%');
   } finally {
     h.dispose();
   }

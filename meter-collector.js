@@ -498,7 +498,7 @@ async function collect(origin, id, options = {}) {
 
     const unknownFiles = attachments.filter(a => a.status !== 'parsed').length;
     const result = {
-      version: '1.0.0',
+      version: '1.0.1',
       conversation: id,
       latest,
       cascadeModelConfigs,

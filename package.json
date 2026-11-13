@@ -1,6 +1,6 @@
 {
   "name": "antigravity-context-viewer",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Antigravity 極簡對話上下文與生成效能監控面板（繁體中文版）",
   "main": "cli.js",
   "bin": {

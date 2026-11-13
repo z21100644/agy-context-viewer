@@ -1,5 +1,5 @@
 (function () {
-  const METER_VERSION = '1.0.0';
+  const METER_VERSION = '1.0.1';
 
   'use strict';
   if (location.protocol !== 'https:' || location.hostname !== '127.0.0.1') return;
@@ -1034,7 +1034,7 @@
   <div id="speed-summary" class="telemetry-grid">
     <div class="t-cell">
       <div class="t-label-row">
-        <span class="t-label">輸出速度</span>
+        <span class="t-label" title="產出 ÷ 總耗時（含首字延遲）">整體速率</span>
         <span id="speed-badge" class="speed-pill pill-muted">待命</span>
       </div>
       <div id="speed-val" class="t-value t-value-speed">—</div>
@@ -1160,9 +1160,9 @@
   const getSpeedTier = sp => {
     if (!sp || sp.tps == null) return null;
     if (typeof classifySpeed === 'function') return classifySpeed(sp.tps);
-    if (sp.tps >= 80) return { level: 'fast', label: '極速', tone: 'good' };
-    if (sp.tps >= 35) return { level: 'smooth', label: '流暢', tone: 'good' };
-    if (sp.tps >= 15) return { level: 'fair', label: '良好', tone: 'warn' };
+    if (sp.tps >= 60) return { level: 'fast', label: '極速', tone: 'good' };
+    if (sp.tps >= 25) return { level: 'smooth', label: '流暢', tone: 'good' };
+    if (sp.tps >= 10) return { level: 'fair', label: '良好', tone: 'warn' };
     return { level: 'slow', label: '偏慢', tone: 'danger' };
   };
 
@@ -2394,14 +2394,13 @@
           ? Math.round((sp.ttft / sp.duration) * 100)
           : null;
       const tipParts = [];
-      if (sp.tps != null) {
-        tipParts.push(`整體速率 ${sp.tps} tok/s${spTier ? `（${spTier.label}）` : ''}`);
-      }
       if (sp.streamingTps) {
-        tipParts.push(`純串流速率 ${sp.streamingTps} tok/s`);
+        tipParts.push(`純串流 ${sp.streamingTps} tok/s`);
+      } else if (sp.tps != null) {
+        tipParts.push('含首字延遲計算');
       }
       if (ttftShare != null && ttftShare >= 50) {
-        tipParts.push(`首字延遲占耗時 ${ttftShare}%`);
+        tipParts.push(`首字占 ${ttftShare}%`);
       }
       const speedTip = tipParts.join(' · ');
 
