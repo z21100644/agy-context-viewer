@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { loadAsarEngine, getStateDir } = require('./asar-engine');
+const { loadAsarEngine, getStateDir, isFileLockError, assertWindowsTargetUnlocked } = require('./asar-engine');
 const { normalizeLocale, detectEnvLocale } = require('./meter-core');
 
 const asar = loadAsarEngine();
@@ -177,6 +177,7 @@ async function install(options = {}) {
   const customPathIdx = process.argv.indexOf('--path');
   const customPath = options.path || (customPathIdx >= 0 ? process.argv[customPathIdx + 1] : null);
   const installed = findAsarPath(customPath, options.lang);
+  assertWindowsTargetUnlocked(installed, t.locked(installed));
   const stateDir = getStateDir();
   let sourceArchive = installed;
   let previousManifest = null;
@@ -362,7 +363,7 @@ async function install(options = {}) {
     try {
       fs.copyFileSync(packed, installed);
     } catch (err) {
-      if (err.code === 'EBUSY' || err.code === 'EPERM') {
+      if (isFileLockError(err)) {
         throw new Error(t.locked(installed));
       }
       throw err;

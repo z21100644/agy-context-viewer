@@ -127,3 +127,26 @@ test('CLI multi-language output supports --lang en / zh-CN / zh-TW', () => {
   const helpTw = execFileSync(process.execPath, [cliPath, 'help', '--lang', 'zh-TW'], { encoding: 'utf8' });
   assert.ok(helpTw.includes('一鍵持久化安裝'));
 });
+
+test('Windows batch launchers preserve CRLF, avoid UTF-8 byte-offset corruption, and invoke cli.js', () => {
+  for (const scriptName of ['install.bat', 'uninstall.bat']) {
+    const scriptPath = path.join(__dirname, scriptName);
+    const raw = fs.readFileSync(scriptPath);
+    assert.notEqual(raw[0], 0xef, `${scriptName} must not start with UTF-8 BOM`);
+    assert.equal(raw.filter(b => b > 127).length, 0, `${scriptName} must stay pure ASCII for cmd.exe seek safety`);
+    const text = raw.toString('utf8');
+    const lfCount = (text.match(/\n/g) || []).length;
+    const crlfCount = (text.match(/\r\n/g) || []).length;
+    assert.ok(lfCount > 0);
+    assert.equal(crlfCount, lfCount, `${scriptName} must use CRLF line endings`);
+
+    if (process.platform === 'win32') {
+      const out = execFileSync(
+        process.env.ComSpec || 'cmd.exe',
+        ['/d', '/s', '/c', `""${scriptPath}" --help --lang zh-TW < nul"`],
+        { encoding: 'utf8', windowsVerbatimArguments: true }
+      );
+      assert.ok(out.includes('一鍵持久化安裝'), `${scriptName} failed to invoke cli.js under cmd.exe`);
+    }
+  }
+});

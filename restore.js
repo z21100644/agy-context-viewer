@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
-const { getStateDir } = require('./asar-engine');
+const { getStateDir, isFileLockError, assertWindowsTargetUnlocked } = require('./asar-engine');
 const { normalizeLocale, detectEnvLocale } = require('./meter-core');
 
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
@@ -132,10 +132,12 @@ async function restore(options = {}) {
     );
   }
 
+  assertWindowsTargetUnlocked(info.installed, t.locked(info.installed));
+
   try {
     fs.copyFileSync(backup, info.installed);
   } catch (err) {
-    if (err.code === 'EBUSY' || err.code === 'EPERM') {
+    if (isFileLockError(err)) {
       throw new Error(t.locked(info.installed));
     }
     throw err;

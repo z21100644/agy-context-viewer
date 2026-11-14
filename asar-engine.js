@@ -194,4 +194,25 @@ function getStateDir() {
   return dir;
 }
 
-module.exports = { loadAsarEngine, builtinAsar, getStateDir };
+/** Checks whether an fs error indicates a locked target archive on Windows or POSIX. */
+function isFileLockError(err) {
+  if (!err) return false;
+  if (err.code === 'EBUSY' || err.code === 'EPERM') return true;
+  return process.platform === 'win32' && (err.code === 'EACCES' || err.code === 'UNKNOWN');
+}
+
+/** Fails fast before staging/copying if a running Windows Antigravity process holds app.asar. */
+function assertWindowsTargetUnlocked(targetPath, lockedMessage) {
+  if (process.platform !== 'win32') return;
+  try {
+    const fd = fs.openSync(targetPath, 'r+');
+    fs.closeSync(fd);
+  } catch (err) {
+    if (isFileLockError(err)) {
+      throw new Error(lockedMessage);
+    }
+    throw err;
+  }
+}
+
+module.exports = { loadAsarEngine, builtinAsar, getStateDir, isFileLockError, assertWindowsTargetUnlocked };

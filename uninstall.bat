@@ -1,11 +1,9 @@
 @echo off
 setlocal
-chcp 65001 >nul
 cd /d "%~dp0"
 
 if not exist "%~dp0cli.js" (
-  echo [Error / 错误 / 錯誤] Please extract the entire ZIP archive before running uninstall.bat!
-  echo 请先完整解压 ZIP 压缩包后再运行 uninstall.bat / 請先完整解壓縮 ZIP 壓縮檔後再執行 uninstall.bat
+  echo [Error] Please extract the entire ZIP archive before running uninstall.bat!
   pause
   exit /b 1
 )
@@ -20,16 +18,10 @@ if not defined NODE_EXE if exist "%ProgramFiles%\nodejs\node.exe" set "NODE_EXE=
 if not defined NODE_EXE if exist "%ProgramFiles(x86)%\nodejs\node.exe" set "NODE_EXE=%ProgramFiles(x86)%\nodejs\node.exe"
 if not defined NODE_EXE if exist "%LOCALAPPDATA%\Programs\nodejs\node.exe" set "NODE_EXE=%LOCALAPPDATA%\Programs\nodejs\node.exe"
 
-if not defined NODE_EXE (
-  for /d %%D in ("%APPDATA%\fnm\node-versions\*") do (
-    if exist "%%~fD\installation\node.exe" set "NODE_EXE=%%~fD\installation\node.exe"
-  )
-)
-if not defined NODE_EXE (
-  for /d %%D in ("%APPDATA%\nvm\v*") do (
-    if exist "%%~fD\node.exe" set "NODE_EXE=%%~fD\node.exe"
-  )
-)
+if not defined NODE_EXE for /d %%D in ("%APPDATA%\fnm\node-versions\*") do if exist "%%~fD\installation\node.exe" set "NODE_EXE=%%~fD\installation\node.exe"
+if not defined NODE_EXE for /d %%D in ("%LOCALAPPDATA%\fnm\node-versions\*") do if exist "%%~fD\installation\node.exe" set "NODE_EXE=%%~fD\installation\node.exe"
+if not defined NODE_EXE for /d %%D in ("%APPDATA%\nvm\v*") do if exist "%%~fD\node.exe" set "NODE_EXE=%%~fD\node.exe"
+if not defined NODE_EXE for /d %%D in ("%LOCALAPPDATA%\nvm\v*") do if exist "%%~fD\node.exe" set "NODE_EXE=%%~fD\node.exe"
 if not defined NODE_EXE if exist "%APPDATA%\Antigravity\bin\agy-node.cmd" set "NODE_EXE=%APPDATA%\Antigravity\bin\agy-node.cmd"
 
 if defined NODE_EXE goto :FOUND_NODE
@@ -46,17 +38,25 @@ if exist "%ProgramFiles%\Antigravity\Antigravity.exe" (
   goto :FOUND_NODE
 )
 
-echo [Error / 错误 / 錯誤] Neither Node.js nor Antigravity was detected on this system.
+if exist "%ProgramFiles%\Google Antigravity\Antigravity.exe" (
+  set "NODE_EXE=%ProgramFiles%\Google Antigravity\Antigravity.exe"
+  set "ELECTRON_RUN_AS_NODE=1"
+  goto :FOUND_NODE
+)
+
+echo [Error] Neither Node.js nor Antigravity was detected on this system.
 echo Please install Antigravity or Node.js ^>= 22.4 first.
-echo 未检测到 Node.js 或 Antigravity 主程序 / 未偵測到 Node.js 或 Antigravity 主程式。
 pause
 exit /b 1
 
 :FOUND_NODE
-call "%NODE_EXE%" cli.js restore %*
-if errorlevel 1 (
+chcp 65001 >nul
+call "%NODE_EXE%" "%~dp0cli.js" restore %*
+set "EXIT_CODE=%ERRORLEVEL%"
+if not "%EXIT_CODE%"=="0" (
   echo.
-  echo [Exit / 退出码 / 錯誤碼] %errorlevel%
+  echo [Exit Code] %EXIT_CODE%
 )
 echo.
 pause
+exit /b %EXIT_CODE%
