@@ -4,7 +4,8 @@ chcp 65001 >nul
 cd /d "%~dp0"
 
 if not exist "%~dp0cli.js" (
-  echo [錯誤] 請先完整解壓縮 ZIP 壓縮檔後，再執行 install.bat！
+  echo [Error / 错误 / 錯誤] Please extract the entire ZIP archive before running install.bat!
+  echo 请先完整解压 ZIP 压缩包后再运行 install.bat / 請先完整解壓縮 ZIP 壓縮檔後再執行 install.bat
   pause
   exit /b 1
 )
@@ -45,8 +46,9 @@ if exist "%ProgramFiles%\Antigravity\Antigravity.exe" (
   goto :FOUND_NODE
 )
 
-echo [錯誤] 系統未偵測到 Node.js 或 Antigravity 主程式。
-echo 請先確認已安裝 Antigravity 或 Node.js 22.4 以上版本。
+echo [Error / 错误 / 錯誤] Neither Node.js nor Antigravity was detected on this system.
+echo Please install Antigravity or Node.js ^>= 22.4 first.
+echo 未检测到 Node.js 或 Antigravity 主程序 / 未偵測到 Node.js 或 Antigravity 主程式。
 pause
 exit /b 1
 
@@ -54,7 +56,7 @@ exit /b 1
 call "%NODE_EXE%" cli.js install %*
 if errorlevel 1 (
   echo.
-  echo [提示] 安裝程序結束，錯誤碼：%errorlevel%。
+  echo [Exit / 退出码 / 錯誤碼] %errorlevel%
 )
 echo.
 pause

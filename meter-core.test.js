@@ -2,6 +2,8 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
+  normalizeLocale,
+  detectLocaleFromCandidates,
   summarize,
   classifySpeed,
   measure,
@@ -12,8 +14,32 @@ const {
   resolveModelQuota
 } = require('./meter-core');
 
-test('summarize 精確解析伺服器回傳用量、快取拆分與串流速度', () => {
-  const res = summarize({
+test('normalizeLocale & detectLocaleFromCandidates accurately map en / zh-CN / zh-TW and fallback to en', () => {
+  assert.equal(normalizeLocale('en'), 'en');
+  assert.equal(normalizeLocale('en-US'), 'en');
+  assert.equal(normalizeLocale('en_GB.UTF-8'), 'en');
+  assert.equal(normalizeLocale('zh-CN'), 'zh-CN');
+  assert.equal(normalizeLocale('zh_CN.UTF-8'), 'zh-CN');
+  assert.equal(normalizeLocale('zh-Hans'), 'zh-CN');
+  assert.equal(normalizeLocale('zh-SG'), 'zh-CN');
+  assert.equal(normalizeLocale('zh'), 'zh-CN');
+  assert.equal(normalizeLocale('zh-TW'), 'zh-TW');
+  assert.equal(normalizeLocale('zh_TW.UTF-8'), 'zh-TW');
+  assert.equal(normalizeLocale('zh-Hant'), 'zh-TW');
+  assert.equal(normalizeLocale('zh-HK'), 'zh-TW');
+  assert.equal(normalizeLocale('zh-MO'), 'zh-TW');
+  assert.equal(normalizeLocale('ja-JP'), 'en');
+  assert.equal(normalizeLocale('C.UTF-8'), 'en');
+  assert.equal(normalizeLocale(''), 'en');
+
+  assert.equal(detectLocaleFromCandidates(['', 'C.UTF-8', 'zh-Hant-TW', 'en-US']), 'zh-TW');
+  assert.equal(detectLocaleFromCandidates([null, 'zh-Hans-CN', 'en-US']), 'zh-CN');
+  assert.equal(detectLocaleFromCandidates(['fr-FR', 'zh-TW']), 'en');
+  assert.equal(detectLocaleFromCandidates([]), 'en');
+});
+
+test('summarize & classifySpeed parse server usage, cache split, and streaming speed across en / zh-CN / zh-TW', () => {
+  const payload = {
     chatModel: {
       modelDisplayName: 'Gemini 2.5 Pro',
       timeToFirstToken: '0.85s',
@@ -31,29 +57,36 @@ test('summarize 精確解析伺服器回傳用量、快取拆分與串流速度'
         }
       }
     }
-  });
+  };
 
-  assert.equal(res.status, 'reported');
-  assert.equal(res.estimated, false);
-  assert.equal(res.freshInput, 42000);
-  assert.equal(res.cached, 158000);
-  assert.equal(res.input, 200000);
-  assert.equal(res.output, 200);
-  assert.equal(res.thinking, 80);
-  assert.equal(res.actual, 200200);
-  assert.equal(res.budget, 1000000);
-  assert.ok(Math.abs(res.percent - 20.02) < 0.001);
-  assert.equal(res.speed.ttft, 0.85);
-  assert.equal(res.speed.duration, 4);
-  assert.equal(res.speed.tps, 50);
-  assert.equal(res.speed.level, 'smooth');
-  assert.equal(res.speed.label, '流暢');
-  assert.equal(res.modelLabel, 'Gemini 2.5 Pro');
+  const resEn = summarize(payload);
+  assert.equal(resEn.status, 'reported');
+  assert.equal(resEn.estimated, false);
+  assert.equal(resEn.freshInput, 42000);
+  assert.equal(resEn.cached, 158000);
+  assert.equal(resEn.input, 200000);
+  assert.equal(resEn.output, 200);
+  assert.equal(resEn.thinking, 80);
+  assert.equal(resEn.actual, 200200);
+  assert.equal(resEn.budget, 1000000);
+  assert.ok(Math.abs(resEn.percent - 20.02) < 0.001);
+  assert.equal(resEn.speed.ttft, 0.85);
+  assert.equal(resEn.speed.duration, 4);
+  assert.equal(resEn.speed.tps, 50);
+  assert.equal(resEn.speed.level, 'smooth');
+  assert.equal(resEn.speed.label, 'Smooth');
+  assert.equal(resEn.modelLabel, 'Gemini 2.5 Pro');
 
-  assert.deepEqual(classifySpeed(60), { level: 'fast', label: '極速', tone: 'good' });
-  assert.deepEqual(classifySpeed(25), { level: 'smooth', label: '流暢', tone: 'good' });
-  assert.deepEqual(classifySpeed(10), { level: 'fair', label: '良好', tone: 'warn' });
-  assert.deepEqual(classifySpeed(9.9), { level: 'slow', label: '偏慢', tone: 'danger' });
+  assert.equal(summarize(payload, { lang: 'zh-CN' }).speed.label, '流畅');
+  assert.equal(summarize(payload, { lang: 'zh-TW' }).speed.label, '流暢');
+
+  assert.deepEqual(classifySpeed(60, 'en'), { level: 'fast', label: 'Fast', tone: 'good' });
+  assert.deepEqual(classifySpeed(60, 'zh-CN'), { level: 'fast', label: '极速', tone: 'good' });
+  assert.deepEqual(classifySpeed(60, 'zh-TW'), { level: 'fast', label: '極速', tone: 'good' });
+  assert.deepEqual(classifySpeed(25, 'zh-TW'), { level: 'smooth', label: '流暢', tone: 'good' });
+  assert.deepEqual(classifySpeed(10, 'en'), { level: 'fair', label: 'Fair', tone: 'warn' });
+  assert.deepEqual(classifySpeed(9.9, 'en'), { level: 'slow', label: 'Slow', tone: 'danger' });
+  assert.deepEqual(classifySpeed(9.9, 'zh-CN'), { level: 'slow', label: '偏慢', tone: 'danger' });
   assert.equal(classifySpeed(null), null);
 
   const tinyDur = summarize({
@@ -67,7 +100,7 @@ test('summarize 精確解析伺服器回傳用量、快取拆分與串流速度'
   assert.equal(tinyDur.speed.streamingTps, null);
 });
 
-test('formatModelLabel 優雅格式化內部佔位符模型名稱並去除思考檔位後綴', () => {
+test('formatModelLabel formats placeholder model names and strips thinking tier suffixes', () => {
   assert.equal(formatModelLabel('MODEL_PLACEHOLDER_M37'), 'Model M37');
   assert.equal(formatModelLabel('Claude Sonnet 4.5'), 'Claude Sonnet 4.5');
   assert.equal(formatModelLabel('Gemini 4 Hydrogen (High)'), 'Gemini 4 Hydrogen');
@@ -77,22 +110,36 @@ test('formatModelLabel 優雅格式化內部佔位符模型名稱並去除思考
   assert.equal(formatModelLabel(''), '');
 });
 
-test('classifyRequestError 正確區分上下文超限與 Go context deadline 網路逾時', () => {
-  const overflow = classifyRequestError('input token count exceeds the maximum allowed limit of 983,040 tokens');
-  assert.equal(overflow.kind, 'context_overflow');
-  assert.equal(overflow.serviceLimit, 983040);
-  assert.equal(overflow.badgeText, '超限');
+test('classifyRequestError distinguishes context overflow vs Go context deadline timeout in all 3 locales', () => {
+  const errText = 'input token count exceeds the maximum allowed limit of 983,040 tokens';
+  const overflowEn = classifyRequestError(errText, { lang: 'en' });
+  assert.equal(overflowEn.kind, 'context_overflow');
+  assert.equal(overflowEn.serviceLimit, 983040);
+  assert.equal(overflowEn.badgeText, 'Overflow');
+  assert.ok(overflowEn.detail.includes('/compact'));
 
-  const deadline = classifyRequestError('rpc error: code = DeadlineExceeded desc = context deadline exceeded');
-  assert.equal(deadline.kind, 'network_error');
-  assert.equal(deadline.badgeText, '網路');
+  const overflowCn = classifyRequestError(errText, { lang: 'zh-CN' });
+  assert.equal(overflowCn.badgeText, '超限');
+  assert.ok(overflowCn.detail.includes('服务器限制'));
 
-  const rateLimit = classifyRequestError('429 Too Many Requests: please retry in 12.5s');
+  const overflowTw = classifyRequestError(errText, { lang: 'zh-TW' });
+  assert.equal(overflowTw.badgeText, '超限');
+  assert.ok(overflowTw.detail.includes('伺服器限制'));
+
+  const deadlineEn = classifyRequestError('rpc error: code = DeadlineExceeded desc = context deadline exceeded', { lang: 'en' });
+  assert.equal(deadlineEn.kind, 'network_error');
+  assert.equal(deadlineEn.badgeText, 'Network');
+
+  const deadlineTw = classifyRequestError('rpc error: code = DeadlineExceeded desc = context deadline exceeded', { lang: 'zh-TW' });
+  assert.equal(deadlineTw.badgeText, '網路');
+
+  const rateLimit = classifyRequestError('429 Too Many Requests: please retry in 12.5s', { lang: 'zh-CN' });
   assert.equal(rateLimit.kind, 'rate_limited');
   assert.equal(rateLimit.retryAfterSec, 12.5);
+  assert.equal(rateLimit.badgeText, '限流');
 });
 
-test('classifyRequestError 結合配額池設定顯示重置時間', () => {
+test('classifyRequestError combines quota pool config and reset time across locales', () => {
   const configs = [
     {
       modelId: 'claude-sonnet-5-5',
@@ -100,19 +147,37 @@ test('classifyRequestError 結合配額池設定顯示重置時間', () => {
       quotaInfo: { remainingFraction: 0, resetTime: '2026-11-13T08:30:00.000Z' }
     }
   ];
-  const quota = resolveModelQuota('Claude Sonnet 5.5', configs);
-  assert.equal(quota.poolKey, 'claude-sonnet-5-5');
+  const quotaEn = resolveModelQuota('Claude Sonnet 5.5', configs, 'en');
+  assert.equal(quotaEn.poolKey, 'claude-sonnet-5-5');
+  assert.equal(quotaEn.poolName, 'Claude Sonnet 5.5 Quota Pool');
 
-  const err = classifyRequestError('RESOURCE_EXHAUSTED: out of quota', {
+  const errEn = classifyRequestError('RESOURCE_EXHAUSTED: out of quota', {
+    lang: 'en',
     currentModel: 'Claude Sonnet 5.5',
     cascadeModelConfigs: configs
   });
-  assert.equal(err.kind, 'quota_exhausted');
-  assert.equal(err.badgeText, '額度耗盡');
-  assert.ok(err.detail.includes('Claude Sonnet 5.5'));
+  assert.equal(errEn.kind, 'quota_exhausted');
+  assert.equal(errEn.badgeText, 'No Quota');
+  assert.ok(errEn.detail.includes('Claude Sonnet 5.5 Quota Pool'));
+
+  const errCn = classifyRequestError('RESOURCE_EXHAUSTED: out of quota', {
+    lang: 'zh-CN',
+    currentModel: 'Claude Sonnet 5.5',
+    cascadeModelConfigs: configs
+  });
+  assert.equal(errCn.badgeText, '额度耗尽');
+  assert.ok(errCn.detail.includes('配额池'));
+
+  const errTw = classifyRequestError('RESOURCE_EXHAUSTED: out of quota', {
+    lang: 'zh-TW',
+    currentModel: 'Claude Sonnet 5.5',
+    cascadeModelConfigs: configs
+  });
+  assert.equal(errTw.badgeText, '額度耗盡');
+  assert.ok(errTw.detail.includes('配額池'));
 });
 
-test('非超限錯誤保留前一次有效上下文容量，不將既有進度歸零', () => {
+test('non-overflow error preserves previous valid context occupancy', () => {
   const prev = summarize({
     chatModel: {
       model: 'Gemini 2.5 Pro',
@@ -137,7 +202,7 @@ test('非超限錯誤保留前一次有效上下文容量，不將既有進度�
   assert.equal(afterNetErr.budget, 1000000);
 });
 
-test('analyzeSteps 以最近一次壓縮點為界統計當前有效上下文、工具呼叫與附件', () => {
+test('analyzeSteps scopes active context window from latest compaction checkpoint and localizes inline media', () => {
   const steps = [
     {
       userInput: {
@@ -169,7 +234,10 @@ test('analyzeSteps 以最近一次壓縮點為界統計當前有效上下文、�
     {
       userInput: {
         userResponse: '再對照一次同一張圖',
-        media: [{ uri: 'file:///d:/spec.png', mimeType: 'image/png' }]
+        media: [
+          { uri: 'file:///d:/spec.png', mimeType: 'image/png' },
+          { inlineData: 'aGVsbG8=', mimeType: 'image/png' }
+        ]
       }
     },
     {
@@ -179,28 +247,26 @@ test('analyzeSteps 以最近一次壓縮點為界統計當前有效上下文、�
     }
   ];
 
-  const session = analyzeSteps(steps);
-  assert.equal(session.steps, 6);
-  assert.equal(session.activeSteps, 5);
-  assert.equal(session.compacted, true);
-  assert.equal(session.userMessages, 2);
-  assert.equal(session.assistantMessages, 1);
-  assert.equal(session.media.length, 1);
-  assert.equal(session.media[0].name, 'spec.png');
-  assert.equal(session.media[0].references, 2);
-  assert.ok(session.groups.user.tokens > 0);
-  assert.ok(session.groups.assistant.tokens > 0);
-  assert.ok(session.groups.thinking.tokens > 0);
-  assert.ok(session.groups.tools.tokens > 0);
-  assert.ok(session.groups.summaries.tokens > 0);
-  assert.equal(session.currentError.text, '429 Too Many Requests');
+  const sessionEn = analyzeSteps(steps, { lang: 'en' });
+  assert.equal(sessionEn.steps, 6);
+  assert.equal(sessionEn.activeSteps, 5);
+  assert.equal(sessionEn.compacted, true);
+  assert.equal(sessionEn.userMessages, 2);
+  assert.equal(sessionEn.assistantMessages, 1);
+  assert.equal(sessionEn.media.length, 2);
+  assert.equal(sessionEn.media[0].name, 'spec.png');
+  assert.equal(sessionEn.media[0].references, 2);
+  assert.equal(sessionEn.media[1].name, 'Inline image');
+  assert.equal(analyzeSteps(steps, { lang: 'zh-CN' }).media[1].name, '内嵌图片');
+  assert.equal(analyzeSteps(steps, { lang: 'zh-TW' }).media[1].name, '內嵌圖片');
+  assert.equal(sessionEn.currentError.text, '429 Too Many Requests');
 
-  const cjkMeasure = measure('繁體中文與 English 混合測試');
+  const cjkMeasure = measure('繁體中文、简体中文與 English 混合測試');
   assert.ok(cjkMeasure.tokens > 0);
   assert.ok(cjkMeasure.high >= cjkMeasure.low);
 });
 
-test('computeContextShares 計算當前上下文占比且總和精確收斂至 100%', () => {
+test('computeContextShares converges active context shares strictly to 100%', () => {
   const { totalWeight, shares } = computeContextShares([
     { id: 'system', weight: 40000 },
     { id: 'tools', weight: 11500 },

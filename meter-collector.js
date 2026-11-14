@@ -5,7 +5,63 @@ const path = require('path');
 const https = require('https');
 const { fileURLToPath } = require('url');
 const { spawn, spawnSync } = require('child_process');
-const { analyzeSteps, summarize, add, empty, measure } = require('./meter-core');
+const { analyzeSteps, summarize, add, empty, measure, normalizeLocale, detectEnvLocale } = require('./meter-core');
+
+const COLLECTOR_I18N = {
+  en: {
+    respTooLarge: 'Local response too large; scan incomplete',
+    localHttp: code => `Local API HTTP ${code}`,
+    localTimeout: 'Local API read timeout',
+    noPython: 'Python not installed; skipping Office/PDF deep scan',
+    pyTimeout: 'Scan timed out; unfinished parts not counted as zero',
+    pyFail: err => `Parse failed: ${err}`,
+    pyNoResult: 'No attachment scan result returned',
+    noLocalAtt: 'No local attachment available',
+    attMissing: 'Attachment missing or removed',
+    attNotFile: 'Attachment is not a regular file',
+    attNoStats: 'No attachment stats returned',
+    invalidConv: 'Invalid local conversation',
+    noTrajectory: 'Conversation history unavailable',
+    incompleteSteps: (got, exp) => `Only retrieved ${got}/${exp} history steps`
+  },
+  'zh-CN': {
+    respTooLarge: '本地响应过大，扫描不完整',
+    localHttp: code => `本地接口 HTTP ${code}`,
+    localTimeout: '本地接口读取超时',
+    noPython: '未安装 Python，跳过 Office/PDF 深度解析',
+    pyTimeout: '扫描超时，未完成部分不计为零',
+    pyFail: err => `解析失败：${err}`,
+    pyNoResult: '未返回附件解析结果',
+    noLocalAtt: '无可用本地附件',
+    attMissing: '附件不存在或已移除',
+    attNotFile: '附件不是普通文件',
+    attNoStats: '未返回附件统计',
+    invalidConv: '无效本地对话',
+    noTrajectory: '未获取对话历史',
+    incompleteSteps: (got, exp) => `历史仅获取 ${got}/${exp} 步`
+  },
+  'zh-TW': {
+    respTooLarge: '本機回應過大，掃描不完整',
+    localHttp: code => `本機介面 HTTP ${code}`,
+    localTimeout: '本機介面讀取逾時',
+    noPython: '未安裝 Python，略過 Office/PDF 深度解析',
+    pyTimeout: '掃描逾時，未完成部分不計為零',
+    pyFail: err => `解析失敗：${err}`,
+    pyNoResult: '未回傳附件解析結果',
+    noLocalAtt: '無可用本機附件',
+    attMissing: '附件不存在或已移除',
+    attNotFile: '附件不是一般檔案',
+    attNoStats: '未回傳附件統計',
+    invalidConv: '無效本機對話',
+    noTrajectory: '未取得對話歷史',
+    incompleteSteps: (got, exp) => `歷史僅取得 ${got}/${exp} 步`
+  }
+};
+
+function getCollectorDict(lang) {
+  const resolved = normalizeLocale(lang || detectEnvLocale('en'), 'en');
+  return { lang: resolved, t: COLLECTOR_I18N[resolved] || COLLECTOR_I18N.en };
+}
 
 const TEXT_EXTENSIONS = new Set([
   '.txt', '.md', '.markdown', '.json', '.jsonl', '.csv', '.tsv',
@@ -60,7 +116,8 @@ const filesCache = new Map();
 const conversations = new Map();
 let pythonQueue = Promise.resolve();
 
-function request(origin, method, body, token) {
+function request(origin, method, body, token, lang) {
+  const { t } = getCollectorDict(lang);
   const url = method ? `${origin}/exa.language_server_pb.LanguageServerService/${method}` : `${origin}/`;
   return new Promise((resolve, reject) => {
     const req = https.request(
@@ -82,7 +139,7 @@ function request(origin, method, body, token) {
         response.on('data', chunk => {
           size += chunk.length;
           if (size > 96 * 1024 * 1024) {
-            req.destroy(new Error('本機回應過大，掃描不完整'));
+            req.destroy(new Error(t.respTooLarge));
             return;
           }
           chunks.push(chunk);
@@ -90,7 +147,7 @@ function request(origin, method, body, token) {
         response.on('end', () => {
           const text = Buffer.concat(chunks).toString('utf8');
           if (response.statusCode !== 200) {
-            reject(new Error(`本機介面 HTTP ${response.statusCode}`));
+            reject(new Error(t.localHttp(response.statusCode)));
           } else {
             try {
               resolve(method ? JSON.parse(text) : text);
@@ -101,26 +158,28 @@ function request(origin, method, body, token) {
         });
       }
     );
-    req.setTimeout(20000, () => req.destroy(new Error('本機介面讀取逾時')));
+    req.setTimeout(20000, () => req.destroy(new Error(t.localTimeout)));
     req.on('error', reject);
     req.end(method ? JSON.stringify(body) : undefined);
   });
 }
 
-function pythonScan(items) {
-  const task = pythonQueue.then(() => runPythonScan(items));
+function pythonScan(items, lang) {
+  const task = pythonQueue.then(() => runPythonScan(items, lang));
   pythonQueue = task.catch(() => {});
   return task;
 }
 
-function runPythonScan(items) {
+function runPythonScan(items, lang) {
+  const { lang: resolvedLang, t } = getCollectorDict(lang);
   return new Promise((resolve, reject) => {
     const py = resolvePython();
-    if (!py) return reject(new Error('未安裝 Python，略過 Office/PDF 深度解析'));
+    if (!py) return reject(new Error(t.noPython));
     const source = fs.readFileSync(path.join(__dirname, 'attachment_scan.py'), 'utf8');
     const child = spawn(py, ['-I', '-c', source, '--json-lines'], {
       windowsHide: true,
-      stdio: ['pipe', 'pipe', 'pipe']
+      stdio: ['pipe', 'pipe', 'pipe'],
+      env: { ...process.env, AG_METER_LANG: resolvedLang }
     });
     let output = '';
     let errors = '';
@@ -153,10 +212,10 @@ function runPythonScan(items) {
     child.on('close', code => {
       clearTimeout(timer);
       const reason = timedOut
-        ? '掃描逾時，未完成部分不計為零'
+        ? t.pyTimeout
         : code !== 0
-          ? '解析失敗：' + errors.slice(0, 120)
-          : '未回傳附件解析結果';
+          ? t.pyFail(errors.slice(0, 120))
+          : t.pyNoResult;
       const done = new Set(completed.map(v => v.key));
       for (const item of items) {
         if (!done.has(item.key)) {
@@ -290,7 +349,8 @@ function parseLocalNativeFile(filePath, stat, mime) {
   return null;
 }
 
-async function scanFiles(media) {
+async function scanFiles(media, lang) {
+  const { lang: resolvedLang, t } = getCollectorDict(lang);
   const results = new Map();
   const work = [];
   for (const item of media) {
@@ -342,12 +402,12 @@ async function scanFiles(media) {
         continue;
       }
 
-      if (!item.uri || /^https?:/i.test(item.uri)) throw new Error('無可用本機附件');
+      if (!item.uri || /^https?:/i.test(item.uri)) throw new Error(t.noLocalAtt);
       const targetPath = item.uri.startsWith('file:') ? fileURLToPath(item.uri) : item.uri;
-      if (!fs.existsSync(targetPath)) throw new Error('附件不存在或已移除');
+      if (!fs.existsSync(targetPath)) throw new Error(t.attMissing);
       const target = fs.realpathSync(targetPath);
       const stat = fs.statSync(target);
-      if (!stat.isFile()) throw new Error('附件不是一般檔案');
+      if (!stat.isFile()) throw new Error(t.attNotFile);
       const cacheKey = `${target.toLowerCase()}|${stat.size}|${stat.mtimeMs}`;
 
       if (filesCache.has(cacheKey)) {
@@ -370,7 +430,10 @@ async function scanFiles(media) {
 
   if (work.length) {
     try {
-      const parsed = await pythonScan(work.map(({ key, path: p }) => ({ key, path: p })));
+      const parsed = await pythonScan(
+        work.map(({ key, path: p }) => ({ key, path: p })),
+        resolvedLang
+      );
       for (const result of parsed) {
         const job = work.find(w => w.key === result.key);
         if (job) {
@@ -386,7 +449,7 @@ async function scanFiles(media) {
   }
 
   return media.map(item => {
-    const r = results.get(item.uri) || { ...empty(), status: 'unknown', unknownParts: ['未回傳附件統計'] };
+    const r = results.get(item.uri) || { ...empty(), status: 'unknown', unknownParts: [t.attNoStats] };
     const tokens = r.tokens != null ? r.tokens : Math.round(((r.low || 0) + (r.high || 0)) / 2);
     return {
       ...item,
@@ -399,19 +462,20 @@ async function scanFiles(media) {
 }
 
 async function collect(origin, id, options = {}) {
+  const { lang, t } = getCollectorDict(options.lang);
   if (!/^https:\/\/127\.0\.0\.1:\d+$/.test(origin) || !/^[a-f\d-]{36}$/i.test(id)) {
-    throw new Error('無效本機對話');
+    throw new Error(t.invalidConv);
   }
-  const key = `${origin}/${id}`;
+  const key = `${origin}/${id}/${lang}`;
   const previous = conversations.get(key);
   if (previous?.pending) return previous.pending;
   if (options.force) filesCache.clear();
   if (!options.force && previous?.result && Date.now() - previous.at < 10000) return previous.result;
 
   const task = (async () => {
-    const html = await request(origin);
+    const html = await request(origin, null, null, null, lang);
     const token = JSON.parse(html.match(/window\.__APP_CONFIG__\s*=\s*(.*?);/)[1]).csrfToken;
-    const call = (method, body) => request(origin, method, body, token);
+    const call = (method, body) => request(origin, method, body, token, lang);
 
     const [full, userStatusRes] = await Promise.all([
       call('GetCascadeTrajectory', { cascadeId: id, trajectoryVerbosity: 3 }),
@@ -420,7 +484,7 @@ async function collect(origin, id, options = {}) {
     const cascadeModelConfigs = userStatusRes?.userStatus?.cascadeModelConfigData?.clientModelConfigs || [];
 
     const trajectory = full.trajectory;
-    if (!trajectory) throw new Error('未取得對話歷史');
+    if (!trajectory) throw new Error(t.noTrajectory);
     const steps = trajectory.steps || [];
     const expected = Number(full.numTotalSteps ?? steps.length);
     while (steps.length < expected) {
@@ -429,12 +493,12 @@ async function collect(origin, id, options = {}) {
         stepOffset: steps.length,
         trajectoryVerbosity: 3
       });
-      if (!page.steps?.length) throw new Error(`歷史僅取得 ${steps.length}/${expected} 步`);
+      if (!page.steps?.length) throw new Error(t.incompleteSteps(steps.length, expected));
       steps.push(...page.steps);
     }
 
-    const session = analyzeSteps(steps);
-    const attachments = await scanFiles(session.media);
+    const session = analyzeSteps(steps, { lang });
+    const attachments = await scanFiles(session.media, lang);
     const attachmentTotal = empty();
     for (const a of attachments) {
       const n = a.references || 1;
@@ -455,7 +519,7 @@ async function collect(origin, id, options = {}) {
 
     let latestModel = null;
     for (const m of (tail.generatorMetadata || []).slice().reverse()) {
-      latest = summarize(m, { cascadeModelConfigs });
+      latest = summarize(m, { lang, cascadeModelConfigs });
       if (latest) {
         latestModel = m.chatModel;
         break;
@@ -475,6 +539,7 @@ async function collect(origin, id, options = {}) {
       const fromStep = summarize(
         { chatModel: { retryInfos: [{ error: session.currentError.text }] } },
         {
+          lang,
           currentModel: latest?.model || latestModel?.modelDisplayName || latestModel?.model || '',
           cascadeModelConfigs,
           previousValidContext: latest

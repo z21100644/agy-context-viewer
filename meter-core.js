@@ -1,6 +1,239 @@
 (function (root) {
   'use strict';
 
+  const SUPPORTED_LOCALES = ['en', 'zh-CN', 'zh-TW'];
+
+  function cleanLocaleToken(raw) {
+    if (!raw || typeof raw !== 'string') return '';
+    return raw
+      .trim()
+      .replace(/\.[a-z0-9_-]+$/i, '')
+      .replace(/@[a-z0-9_-]+$/i, '')
+      .replace(/_/g, '-')
+      .toLowerCase();
+  }
+
+  function isIgnoredLocaleToken(token) {
+    return !token || token === 'c' || token === 'posix' || token === 'und' || token === 'auto';
+  }
+
+  function normalizeLocale(input, fallback = 'en') {
+    const fb = SUPPORTED_LOCALES.includes(fallback) ? fallback : 'en';
+    const s = cleanLocaleToken(input);
+    if (isIgnoredLocaleToken(s)) return fb;
+
+    if (
+      s === 'zh-tw' ||
+      s === 'zh-hk' ||
+      s === 'zh-mo' ||
+      s === 'cht' ||
+      s === 'tc' ||
+      s === 'tw' ||
+      s.startsWith('zh-hant') ||
+      (s.startsWith('zh-') && (s.includes('-tw') || s.includes('-hk') || s.includes('-mo') || s.includes('hant')))
+    ) {
+      return 'zh-TW';
+    }
+
+    if (s === 'zh' || s === 'chs' || s === 'sc' || s === 'cn' || s.startsWith('zh-')) {
+      return 'zh-CN';
+    }
+
+    if (s === 'en' || s === 'english' || s.startsWith('en-')) {
+      return 'en';
+    }
+
+    return fb;
+  }
+
+  function detectLocaleFromCandidates(candidates, fallback = 'en') {
+    const fb = SUPPORTED_LOCALES.includes(fallback) ? fallback : 'en';
+    if (Array.isArray(candidates)) {
+      for (const raw of candidates) {
+        const token = cleanLocaleToken(raw);
+        if (!isIgnoredLocaleToken(token)) {
+          return normalizeLocale(token, fb);
+        }
+      }
+    }
+    return fb;
+  }
+
+  function detectEnvLocale(fallback = 'en') {
+    const candidates = [];
+    if (typeof process === 'object' && process && process.env) {
+      const env = process.env;
+      candidates.push(env.AG_METER_LANG, env.AG_LANG, env.LC_ALL, env.LC_MESSAGES, env.LANGUAGE, env.LANG);
+    }
+    try {
+      if (typeof Intl !== 'undefined' && typeof Intl.DateTimeFormat === 'function') {
+        candidates.push(Intl.DateTimeFormat().resolvedOptions()?.locale);
+      }
+    } catch {}
+    return detectLocaleFromCandidates(candidates, fallback);
+  }
+
+  const CORE_I18N = {
+    en: {
+      speed: {
+        fast: 'Fast',
+        smooth: 'Smooth',
+        fair: 'Fair',
+        slow: 'Slow'
+      },
+      poolSuffix: ' Quota Pool',
+      defaultPool: 'Model Quota Pool',
+      quotaSuffix: ' quota',
+      defaultQuota: 'Model quota',
+      inlineImage: 'Inline image',
+      inlineAttachment: 'Inline attachment',
+      errors: {
+        noneTitle: 'Healthy',
+        noneBadge: 'OK',
+        overflowTitle: 'Context Limit Exceeded',
+        overflowBadge: 'Overflow',
+        overflowDetail: limitStr =>
+          `Input exceeds server limit${limitStr ? ` (max ${limitStr} tokens)` : ''}. Try /compact or start a new chat`,
+        quotaTitle: 'Quota Exhausted',
+        quotaBadge: 'No Quota',
+        quotaDetail: (poolName, resetStr) =>
+          `${poolName} exhausted${resetStr ? ` (resets ~${resetStr})` : ''}. Switch to another available model`,
+        rateTitle: 'Rate Limited',
+        rateBadge: 'Rate Limit',
+        rateDetail: sec =>
+          `Server rate limit reached (429)${sec ? `. Retry in ${sec}s` : '. Please retry shortly'}`,
+        canceledTitle: 'Canceled',
+        canceledBadge: 'Canceled',
+        canceledDetail: 'Last generation was canceled; showing most recent valid context',
+        authTitle: 'Authentication Error',
+        authBadge: 'Auth',
+        authDetail: 'Authentication failed or insufficient permissions. Check your sign-in status',
+        unavailTitle: 'Service Busy',
+        unavailBadge: 'Busy',
+        unavailDetail: 'Model server is temporarily overloaded or under maintenance. Please retry later',
+        netTitle: 'Network Error',
+        netBadge: 'Network',
+        netDefault: 'connection failed or timed out',
+        netTimeout: 'connection or read timeout',
+        netReset: 'connection reset by peer',
+        netRefused: 'connection refused',
+        netDns: 'DNS lookup failed',
+        netEof: 'unexpected EOF',
+        netDetail: reason => `Network error (${reason}), not a context limit issue`,
+        unknownTitle: 'Request Failed',
+        unknownBadge: 'Error',
+        unknownDetail: diag => `Request failed (${diag})`
+      }
+    },
+    'zh-CN': {
+      speed: {
+        fast: '极速',
+        smooth: '流畅',
+        fair: '良好',
+        slow: '偏慢'
+      },
+      poolSuffix: ' 配额池',
+      defaultPool: '模型配额池',
+      quotaSuffix: ' 配额',
+      defaultQuota: '模型配额',
+      inlineImage: '内嵌图片',
+      inlineAttachment: '内嵌附件',
+      errors: {
+        noneTitle: '正常',
+        noneBadge: '正常',
+        overflowTitle: '超出容量上限',
+        overflowBadge: '超限',
+        overflowDetail: limitStr =>
+          `输入超出服务器限制${limitStr ? `（上限 ${limitStr} tokens）` : ''}，建议使用 /compact 或开启新对话`,
+        quotaTitle: '配额已用尽',
+        quotaBadge: '额度耗尽',
+        quotaDetail: (poolName, resetStr) =>
+          `${poolName}已用尽${resetStr ? `（预计 ${resetStr} 重置）` : ''}，可切换其他可用模型`,
+        rateTitle: '请求限流',
+        rateBadge: '限流',
+        rateDetail: sec =>
+          `触发服务器频率限制（429）${sec ? `，请等待 ${sec} 秒后重试` : '，请稍候重试'}`,
+        canceledTitle: '已取消',
+        canceledBadge: '已取消',
+        canceledDetail: '上次生成请求已取消，当前显示最近一次有效上下文记录',
+        authTitle: '验证异常',
+        authBadge: '验证',
+        authDetail: '身份验证失败或权限不足，请确认账号登录状态',
+        unavailTitle: '服务繁忙',
+        unavailBadge: '繁忙',
+        unavailDetail: '模型服务器暂时过载或维护中，请稍后重试',
+        netTitle: '网络连接异常',
+        netBadge: '网络',
+        netDefault: '连接失败或超时',
+        netTimeout: '连接或读取超时',
+        netReset: '连接被远端重置',
+        netRefused: '连接被拒绝',
+        netDns: 'DNS 解析失败',
+        netEof: '连接提前中断 (EOF)',
+        netDetail: reason => `网络连接发生异常（${reason}），非上下文超限`,
+        unknownTitle: '请求失败',
+        unknownBadge: '异常',
+        unknownDetail: diag => `请求未完成（${diag}）`
+      }
+    },
+    'zh-TW': {
+      speed: {
+        fast: '極速',
+        smooth: '流暢',
+        fair: '良好',
+        slow: '偏慢'
+      },
+      poolSuffix: ' 配額池',
+      defaultPool: '模型配額池',
+      quotaSuffix: ' 配額',
+      defaultQuota: '模型配額',
+      inlineImage: '內嵌圖片',
+      inlineAttachment: '內嵌附件',
+      errors: {
+        noneTitle: '正常',
+        noneBadge: '正常',
+        overflowTitle: '超出容量上限',
+        overflowBadge: '超限',
+        overflowDetail: limitStr =>
+          `輸入超出伺服器限制${limitStr ? `（上限 ${limitStr} tokens）` : ''}，建議使用 /compact 或開啟新對話`,
+        quotaTitle: '配額已用盡',
+        quotaBadge: '額度耗盡',
+        quotaDetail: (poolName, resetStr) =>
+          `${poolName}已用盡${resetStr ? `（預計 ${resetStr} 重置）` : ''}，可切換其他可用模型`,
+        rateTitle: '請求限流',
+        rateBadge: '限流',
+        rateDetail: sec =>
+          `觸發伺服器頻率限制（429）${sec ? `，請等待 ${sec} 秒後重試` : '，請稍候重試'}`,
+        canceledTitle: '已取消',
+        canceledBadge: '已取消',
+        canceledDetail: '上次生成請求已取消，目前顯示最近一次有效上下文紀錄',
+        authTitle: '驗證異常',
+        authBadge: '驗證',
+        authDetail: '身分驗證失敗或權限不足，請確認帳號登入狀態',
+        unavailTitle: '服務繁忙',
+        unavailBadge: '繁忙',
+        unavailDetail: '模型伺服器暫時過載或維護中，請稍後重試',
+        netTitle: '網路連線異常',
+        netBadge: '網路',
+        netDefault: '連線失敗或逾時',
+        netTimeout: '連線或讀取逾時',
+        netReset: '連線被遠端重設',
+        netRefused: '連線被拒絕',
+        netDns: 'DNS 解析失敗',
+        netEof: '連線提前中斷 (EOF)',
+        netDetail: reason => `網路連線發生異常（${reason}），非上下文超限`,
+        unknownTitle: '請求失敗',
+        unknownBadge: '異常',
+        unknownDetail: diag => `請求未完成（${diag}）`
+      }
+    }
+  };
+
+  function getCoreDict(lang) {
+    const resolved = normalizeLocale(lang, 'en');
+    return { lang: resolved, dict: CORE_I18N[resolved] || CORE_I18N.en };
+  }
+
   const number = value =>
     value !== undefined && value !== null && Number.isFinite(Number(value)) && Number(value) >= 0
       ? Number(value)
@@ -15,13 +248,14 @@
     return Number.isFinite(num) && num >= 0 ? num : null;
   }
 
-  function classifySpeed(tps) {
+  function classifySpeed(tps, lang = 'en') {
     const v = number(tps);
     if (v === null) return null;
-    if (v >= 60) return { level: 'fast', label: '極速', tone: 'good' };
-    if (v >= 25) return { level: 'smooth', label: '流暢', tone: 'good' };
-    if (v >= 10) return { level: 'fair', label: '良好', tone: 'warn' };
-    return { level: 'slow', label: '偏慢', tone: 'danger' };
+    const { dict } = getCoreDict(lang);
+    if (v >= 60) return { level: 'fast', label: dict.speed.fast, tone: 'good' };
+    if (v >= 25) return { level: 'smooth', label: dict.speed.smooth, tone: 'good' };
+    if (v >= 10) return { level: 'fair', label: dict.speed.fair, tone: 'warn' };
+    return { level: 'slow', label: dict.speed.slow, tone: 'danger' };
   }
 
   function formatModelLabel(raw) {
@@ -49,7 +283,7 @@
     return s.replace(/[^a-z0-9_-]/g, '');
   }
 
-  function formatResetTimeZh(isoStr) {
+  function formatResetTime(isoStr) {
     if (!isoStr) return '';
     try {
       const d = new Date(isoStr);
@@ -64,10 +298,11 @@
     }
   }
 
-  function resolveModelQuota(modelIdOrName, cascadeModelConfigs) {
+  function resolveModelQuota(modelIdOrName, cascadeModelConfigs, lang = 'en') {
     if (!Array.isArray(cascadeModelConfigs) || !cascadeModelConfigs.length || !modelIdOrName) {
       return null;
     }
+    const { dict } = getCoreDict(lang);
     const poolKey = getModelPoolKey(modelIdOrName);
     const targetStr = String(modelIdOrName).toLowerCase();
 
@@ -83,35 +318,43 @@
     if (!matched) return null;
 
     const qi = matched.quotaInfo || {};
-    const poolNames = {
-      'gemini-4-argon': 'Gemini 4 Argon 配額池',
-      'gemini-3.8-flash': 'Gemini 3.8 Flash 配額池',
-      'claude-opus-5-5': 'Claude Opus 5.5 配額池',
-      'claude-sonnet-5-5': 'Claude Sonnet 5.5 配額池',
-      'gpt-oss-120b': 'GPT-OSS 120B 配額池'
+    const poolBaseNames = {
+      'gemini-4-argon': 'Gemini 4 Argon',
+      'gemini-3.8-flash': 'Gemini 3.8 Flash',
+      'claude-opus-5-5': 'Claude Opus 5.5',
+      'claude-sonnet-5-5': 'Claude Sonnet 5.5',
+      'gpt-oss-120b': 'GPT-OSS 120B'
     };
+    const baseName = poolBaseNames[poolKey];
 
     return {
       modelId: matched.modelId || '',
       label: matched.label || modelIdOrName,
       poolKey,
-      poolName: poolNames[poolKey] || (matched.label ? `${matched.label} 配額池` : '模型配額池'),
+      poolName: baseName
+        ? `${baseName}${dict.poolSuffix}`
+        : matched.label
+          ? `${matched.label}${dict.poolSuffix}`
+          : dict.defaultPool,
       remainingFraction: typeof qi.remainingFraction === 'number' ? qi.remainingFraction : null,
       resetTime: qi.resetTime || null
     };
   }
 
   function classifyRequestError(input, options = {}) {
+    const { lang, dict } = getCoreDict(options.lang);
+    const errDict = dict.errors;
     const error = typeof input === 'string' ? input : String(input?.error || input?.message || '');
     const currentModel = options.currentModel || '';
     const cascadeConfigs = options.cascadeModelConfigs || [];
-    const modelQuota = resolveModelQuota(currentModel, cascadeConfigs);
+    const modelQuota = resolveModelQuota(currentModel, cascadeConfigs, lang);
 
     if (!error) {
       return {
         kind: 'none',
-        title: '正常',
-        badgeText: '正常',
+        lang,
+        title: errDict.noneTitle,
+        badgeText: errDict.noneBadge,
         detail: '',
         serviceLimit: null,
         retryAfterSec: null,
@@ -136,9 +379,10 @@
       );
       return {
         kind: 'context_overflow',
-        title: '超出容量上限',
-        badgeText: '超限',
-        detail: `輸入超出伺服器限制${serviceLimit ? `（上限 ${serviceLimit.toLocaleString('en-US')} tokens）` : ''}，建議使用 /compact 或開啟新對話`,
+        lang,
+        title: errDict.overflowTitle,
+        badgeText: errDict.overflowBadge,
+        detail: errDict.overflowDetail(serviceLimit ? serviceLimit.toLocaleString('en-US') : ''),
         serviceLimit,
         retryAfterSec: null,
         resetTime: null,
@@ -156,17 +400,20 @@
     );
 
     if (explicitQuotaMatch || quotaZeroEvidence) {
-      const resetTimeZh = modelQuota?.resetTime ? formatResetTimeZh(modelQuota.resetTime) : null;
-      const poolName = modelQuota?.poolName || (currentModel ? `${formatModelLabel(currentModel)} 配額` : '模型配額');
+      const formattedReset = modelQuota?.resetTime ? formatResetTime(modelQuota.resetTime) : null;
+      const poolName =
+        modelQuota?.poolName || (currentModel ? `${formatModelLabel(currentModel)}${dict.quotaSuffix}` : dict.defaultQuota);
       return {
         kind: 'quota_exhausted',
-        title: '配額已用盡',
-        badgeText: '額度耗盡',
-        detail: `${poolName}已用盡${resetTimeZh ? `（預計 ${resetTimeZh} 重置）` : ''}，可切換其他可用模型`,
+        lang,
+        title: errDict.quotaTitle,
+        badgeText: errDict.quotaBadge,
+        detail: errDict.quotaDetail(poolName, formattedReset),
         serviceLimit: null,
         retryAfterSec: null,
         resetTime: modelQuota?.resetTime || null,
-        resetTimeZh,
+        resetTimeFormatted: formattedReset,
+        resetTimeZh: formattedReset,
         modelOrPool: poolName,
         diagnostic
       };
@@ -178,9 +425,10 @@
       const retryAfterSec = retryMatch ? parseFloat(retryMatch[1]) : null;
       return {
         kind: 'rate_limited',
-        title: '請求限流',
-        badgeText: '限流',
-        detail: `觸發伺服器頻率限制（429）${retryAfterSec ? `，請等待 ${retryAfterSec} 秒後重試` : '，請稍候重試'}`,
+        lang,
+        title: errDict.rateTitle,
+        badgeText: errDict.rateBadge,
+        detail: errDict.rateDetail(retryAfterSec),
         serviceLimit: null,
         retryAfterSec,
         resetTime: null,
@@ -193,9 +441,10 @@
     if (canceledMatch) {
       return {
         kind: 'canceled',
-        title: '已取消',
-        badgeText: '已取消',
-        detail: '上次生成請求已取消，目前顯示最近一次有效上下文紀錄',
+        lang,
+        title: errDict.canceledTitle,
+        badgeText: errDict.canceledBadge,
+        detail: errDict.canceledDetail,
         serviceLimit: null,
         retryAfterSec: null,
         resetTime: null,
@@ -210,9 +459,10 @@
     if (authMatch) {
       return {
         kind: 'auth_error',
-        title: '驗證異常',
-        badgeText: '驗證',
-        detail: '身分驗證失敗或權限不足，請確認帳號登入狀態',
+        lang,
+        title: errDict.authTitle,
+        badgeText: errDict.authBadge,
+        detail: errDict.authDetail,
         serviceLimit: null,
         retryAfterSec: null,
         resetTime: null,
@@ -227,9 +477,10 @@
     if (unavailMatch) {
       return {
         kind: 'service_unavailable',
-        title: '服務繁忙',
-        badgeText: '繁忙',
-        detail: '模型伺服器暫時過載或維護中，請稍後重試',
+        lang,
+        title: errDict.unavailTitle,
+        badgeText: errDict.unavailBadge,
+        detail: errDict.unavailDetail,
         serviceLimit: null,
         retryAfterSec: null,
         resetTime: null,
@@ -243,18 +494,19 @@
         error
       );
     if (netMatch) {
-      let cleanNet = '連線失敗或逾時';
-      if (/deadline exceeded|timeout/i.test(error)) cleanNet = '連線或讀取逾時';
-      else if (/ECONNRESET|socket hang up/i.test(error)) cleanNet = '連線被遠端重設';
-      else if (/ECONNREFUSED/i.test(error)) cleanNet = '連線被拒絕';
-      else if (/ENOTFOUND/i.test(error)) cleanNet = 'DNS 解析失敗';
-      else if (/\bEOF\b/i.test(error)) cleanNet = '連線提前中斷 (EOF)';
+      let cleanNet = errDict.netDefault;
+      if (/deadline exceeded|timeout/i.test(error)) cleanNet = errDict.netTimeout;
+      else if (/ECONNRESET|socket hang up/i.test(error)) cleanNet = errDict.netReset;
+      else if (/ECONNREFUSED/i.test(error)) cleanNet = errDict.netRefused;
+      else if (/ENOTFOUND/i.test(error)) cleanNet = errDict.netDns;
+      else if (/\bEOF\b/i.test(error)) cleanNet = errDict.netEof;
 
       return {
         kind: 'network_error',
-        title: '網路連線異常',
-        badgeText: '網路',
-        detail: `網路連線發生異常（${cleanNet}），非上下文超限`,
+        lang,
+        title: errDict.netTitle,
+        badgeText: errDict.netBadge,
+        detail: errDict.netDetail(cleanNet),
         serviceLimit: null,
         retryAfterSec: null,
         resetTime: null,
@@ -265,9 +517,10 @@
 
     return {
       kind: 'unknown',
-      title: '請求失敗',
-      badgeText: '異常',
-      detail: `請求未完成（${diagnostic}）`,
+      lang,
+      title: errDict.unknownTitle,
+      badgeText: errDict.unknownBadge,
+      detail: errDict.unknownDetail(diagnostic),
       serviceLimit: null,
       retryAfterSec: null,
       resetTime: null,
@@ -279,16 +532,18 @@
   function summarize(metadata, options = {}) {
     const m = metadata?.chatModel;
     if (!m) return null;
+    const lang = normalizeLocale(options.lang, 'en');
     const lastRetry = (m.retryInfos || []).at(-1);
     const error = String(lastRetry?.error || m.error || '');
     const model = m.modelDisplayName || m.responseModel || m.model || options.currentModel || '';
 
     const classification = error
       ? classifyRequestError(error, {
+          lang,
           currentModel: model,
           cascadeModelConfigs: options.cascadeModelConfigs || []
         })
-      : { kind: 'none' };
+      : { kind: 'none', lang };
 
     const exceeded = classification.kind === 'context_overflow';
     const network = classification.kind === 'network_error';
@@ -325,7 +580,7 @@
       streamingTps = Number((output / streamingSec).toFixed(1));
     }
 
-    const speedTier = classifySpeed(tps);
+    const speedTier = classifySpeed(tps, lang);
     const speed =
       tps !== null || duration !== null || output !== null
         ? {
@@ -489,7 +744,8 @@
     return { totalWeight, shares };
   }
 
-  function analyzeSteps(steps) {
+  function analyzeSteps(steps, options = {}) {
+    const { dict } = getCoreDict(options.lang);
     const groups = {
       user: empty(),
       assistant: empty(),
@@ -560,7 +816,7 @@
           media.set(key, {
             uri: `inline:${key}`,
             inlineData: rawData,
-            name: String(value.description || (mime.startsWith('image/') ? '內嵌圖片' : '內嵌附件')),
+            name: String(value.description || (mime.startsWith('image/') ? dict.inlineImage : dict.inlineAttachment)),
             mime,
             references: 1,
             source
@@ -572,7 +828,7 @@
       }
     }
 
-    // 定位最近一次上下文壓縮點（checkpoint 摘要），僅統計當前有效視窗內的步驟
+    // Locate the most recent context compaction checkpoint and count steps within the active window
     let activeStart = 0;
     for (let i = steps.length - 1; i >= 0; i--) {
       const cp = steps[i]?.checkpoint;
@@ -645,6 +901,10 @@
   }
 
   const api = {
+    SUPPORTED_LOCALES,
+    normalizeLocale,
+    detectLocaleFromCandidates,
+    detectEnvLocale,
     summarize,
     measure,
     add,
@@ -656,7 +916,8 @@
     formatModelLabel,
     classifyRequestError,
     resolveModelQuota,
-    formatResetTimeZh
+    formatResetTime,
+    formatResetTimeZh: formatResetTime
   };
 
   root.__AGContextMeterCore = api;

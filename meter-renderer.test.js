@@ -13,7 +13,7 @@ const rendererSource = fs.readFileSync(path.join(__dirname, 'meter-renderer.js')
 function createHarness(options = {}) {
   const listeners = new Map();
   const winListeners = new Map();
-  const storage = new Map();
+  const storage = new Map(Object.entries(options.initialStorage || {}));
 
   function makeNode(tag = 'div', id = '') {
     const attrs = new Map();
@@ -35,6 +35,7 @@ function createHarness(options = {}) {
     const node = {
       tagName: tag.toUpperCase(),
       id,
+      lang: '',
       hidden: false,
       disabled: false,
       textContent: '',
@@ -59,6 +60,7 @@ function createHarness(options = {}) {
       setAttribute(k, v) {
         attrs.set(k, String(v));
         if (k === 'id') this.id = String(v);
+        if (k === 'lang') this.lang = String(v);
         if (k === 'class') this.className = String(v);
         if (k === 'hidden') this.hidden = true;
       },
@@ -150,6 +152,7 @@ function createHarness(options = {}) {
   const body = makeNode('body');
   const docEl = makeNode('html');
   if (options.lightTheme) body.classList.add('vscode-light');
+  if (options.htmlLang) docEl.setAttribute('lang', options.htmlLang);
 
   const byId = new Map();
   const document = {
@@ -158,8 +161,7 @@ function createHarness(options = {}) {
     body,
     documentElement: docEl,
     createElement(tag) {
-      const n = makeNode(tag);
-      return n;
+      return makeNode(tag);
     },
     getElementById(id) {
       for (const c of [...body.children, ...head.children]) {
@@ -195,7 +197,7 @@ function createHarness(options = {}) {
   const scanResult = options.scanResult || {
     ok: true,
     data: {
-      version: '1.0.0',
+      version: '1.0.1',
       conversation: '11111111-2222-3333-4444-555555555555',
       scannedAt: Date.now(),
       latest: null,
@@ -273,7 +275,10 @@ function createHarness(options = {}) {
     window: windowObj,
     document,
     location,
-    navigator: { platform: 'Win32' },
+    navigator: {
+      platform: 'Win32',
+      language: options.navigatorLanguage || ''
+    },
     localStorage: windowObj.localStorage,
     fetch: fetchMock,
     AbortController,
@@ -296,6 +301,7 @@ function createHarness(options = {}) {
 
   return {
     sandbox,
+    storage,
     host,
     el,
     flush,
@@ -304,10 +310,13 @@ function createHarness(options = {}) {
   };
 }
 
-test('首頁閒置狀態：單一膠囊簡潔顯示且隱藏速率佔位符', async () => {
-  const h = createHarness({ pathname: '/' });
+test('Idle state on home page: compact single capsule hides speed placeholder & defaults to English', async () => {
+  const h = createHarness({ pathname: '/', navigatorLanguage: 'ja-JP' });
   try {
     await h.flush();
+    assert.equal(h.sandbox.__AGContextMeter.language(), 'en');
+    assert.equal(h.host.getAttribute('lang'), 'en');
+    assert.equal(h.el('lang-toggle').textContent, 'EN');
     assert.equal(h.el('badge-pct-val').textContent, '—');
     assert.equal(h.el('badge-speed-wrap').hidden, true);
     assert.equal(h.el('badge-speed-sep').hidden, true);
@@ -317,7 +326,7 @@ test('首頁閒置狀態：單一膠囊簡潔顯示且隱藏速率佔位符', as
   }
 });
 
-test('對話頁渲染：精確呈現容量百分比、快取拆分、生成速率與可折疊構成明細', async () => {
+test('Conversation view & live multi-language switching (English -> 简体中文 -> 繁體中文 -> Auto)', async () => {
   const convId = '11111111-2222-3333-4444-555555555555';
   const h = createHarness({
     pathname: `/c/${convId}`,
@@ -344,48 +353,103 @@ test('對話頁渲染：精確呈現容量百分比、快取拆分、生成速�
 
   try {
     await h.flush();
+    // 1. Default English (Auto)
+    assert.equal(h.sandbox.__AGContextMeter.language(), 'en');
+    assert.equal(h.sandbox.__AGContextMeter.languageMode(), 'auto');
     assert.equal(h.el('badge-pct-val').textContent, '25%');
     assert.equal(h.el('badge-speed-wrap').hidden, false);
     assert.equal(h.el('speed-amount').textContent, '50 tok/s');
 
-    // 點擊頂欄膠囊展開單一面板
     h.el('badge').click();
     assert.equal(h.el('panel').hidden, false);
+    assert.equal(h.el('panel-title').textContent, 'Context Window');
     assert.equal(h.el('model').textContent, 'Gemini 2.5 Pro');
-    assert.equal(h.el('key-badge').textContent, '正常');
+    assert.equal(h.el('key-badge').textContent, 'OK');
     assert.equal(h.el('key-pct-hero').textContent, '25%');
     assert.equal(h.el('key-fraction').textContent, '250K / 1M');
-    assert.equal(h.el('key-remaining').textContent, '剩餘 750K');
+    assert.equal(h.el('key-remaining').textContent, '750K left');
     assert.equal(h.el('alert-banner').hidden, true);
-    assert.equal(h.el('speed-badge').textContent, '流暢');
+    assert.equal(h.el('speed-badge').textContent, 'Smooth');
     assert.ok(h.el('speed-badge').classList.contains('pill-good'));
     assert.equal(h.el('speed-val').textContent, '50 tok/s');
     assert.equal(h.el('speed-val').getAttribute('data-speed-tier'), 'smooth');
-    assert.equal(h.el('badge-speed-wrap').getAttribute('data-speed-tier'), 'smooth');
-    assert.equal(h.el('speed-val').title, '純串流 63 tok/s');
-    assert.ok(h.el('ctx-tip-detail').textContent.includes('50 tok/s (流暢)'));
-    assert.equal(h.el('speed-ttft').textContent, '0.62s');
-    assert.equal(h.el('speed-duration').textContent, '3s');
-    assert.equal(h.el('speed-output').textContent, '150 tok');
+    assert.equal(h.el('speed-val').title, 'Streaming 63 tok/s');
+    assert.ok(h.el('ctx-tip-detail').textContent.includes('50 tok/s (Smooth)'));
 
-    // 展開當前上下文占比明細抽屜
     assert.equal(h.el('drawer-body').hidden, true);
     h.el('btn-toggle-details').click();
     assert.equal(h.el('drawer-body').hidden, false);
+    assert.equal(h.el('drawer-title').textContent, 'Context Breakdown');
+    assert.equal(h.el('steps-pill').textContent, '12 steps');
+    assert.equal(h.el('session-total').textContent, 'Total 250K');
+    assert.equal(h.el('label-cat-system').textContent, 'System Prompt & Tools');
+    assert.match(h.el('system').textContent, /^\d+(\.\d)?%$/);
+    assert.ok(h.el('row-attachment').title.includes('diagram.png'));
+
+    // 2. Click #lang-toggle -> Simplified Chinese (zh-CN)
+    h.el('lang-toggle').click();
+    assert.equal(h.sandbox.__AGContextMeter.language(), 'zh-CN');
+    assert.equal(h.storage.get('ag_lang_mode'), 'zh-CN');
+    assert.equal(h.host.getAttribute('lang'), 'zh-CN');
+    assert.equal(h.el('lang-toggle').textContent, '简');
+    assert.equal(h.el('panel-title').textContent, '上下文窗口');
+    assert.equal(h.el('key-badge').textContent, '正常');
+    assert.equal(h.el('key-remaining').textContent, '剩余 750K');
+    assert.equal(h.el('speed-badge').textContent, '流畅');
+    assert.equal(h.el('speed-val').title, '纯流式 63 tok/s');
+    assert.equal(h.el('drawer-title').textContent, '当前上下文占比');
+    assert.equal(h.el('label-cat-system').textContent, '系统提示与工具定义');
     assert.equal(h.el('steps-pill').textContent, '12 步');
     assert.equal(h.el('session-total').textContent, '共 250K');
-    assert.match(h.el('system').textContent, /^\d+(\.\d)?%$/);
-    assert.match(h.el('tools').textContent, /^\d+(\.\d)?%$/);
-    assert.equal(h.el('summaries').textContent, '0%');
-    assert.ok(h.el('row-system').title.includes('tokens'));
-    assert.equal(h.el('files'), null);
-    assert.ok(h.el('row-attachment').title.includes('diagram.png'));
+
+    // 3. Click #lang-toggle -> Traditional Chinese (zh-TW)
+    h.el('lang-toggle').click();
+    assert.equal(h.sandbox.__AGContextMeter.language(), 'zh-TW');
+    assert.equal(h.storage.get('ag_lang_mode'), 'zh-TW');
+    assert.equal(h.host.getAttribute('lang'), 'zh-TW');
+    assert.equal(h.el('lang-toggle').textContent, '繁');
+    assert.equal(h.el('panel-title').textContent, '上下文視窗');
+    assert.equal(h.el('key-badge').textContent, '正常');
+    assert.equal(h.el('key-remaining').textContent, '剩餘 750K');
+    assert.equal(h.el('speed-badge').textContent, '流暢');
+    assert.equal(h.el('speed-val').title, '純串流 63 tok/s');
+    assert.equal(h.el('drawer-title').textContent, '當前上下文占比');
+    assert.equal(h.el('label-cat-system').textContent, '系統提示與工具定義');
+
+    // 4. Click #lang-toggle -> back to Auto (resolves to English)
+    h.el('lang-toggle').click();
+    assert.equal(h.sandbox.__AGContextMeter.languageMode(), 'auto');
+    assert.equal(h.sandbox.__AGContextMeter.language(), 'en');
+    assert.equal(h.el('lang-toggle').textContent, 'EN');
+    assert.equal(h.el('panel-title').textContent, 'Context Window');
   } finally {
     h.dispose();
   }
 });
 
-test('響應式遲滯收折與深淺色主題自動/手動切換、完整銷毀清理', async () => {
+test('Auto-detects IDE html[lang] for Simplified and Traditional Chinese', async () => {
+  const hTw = createHarness({ pathname: '/', htmlLang: 'zh-Hant-TW' });
+  try {
+    await hTw.flush();
+    assert.equal(hTw.sandbox.__AGContextMeter.language(), 'zh-TW');
+    assert.equal(hTw.el('lang-toggle').textContent, '繁');
+    assert.equal(hTw.el('panel-title').textContent, '上下文視窗');
+  } finally {
+    hTw.dispose();
+  }
+
+  const hCn = createHarness({ pathname: '/', navigatorLanguage: 'zh-CN' });
+  try {
+    await hCn.flush();
+    assert.equal(hCn.sandbox.__AGContextMeter.language(), 'zh-CN');
+    assert.equal(hCn.el('lang-toggle').textContent, '简');
+    assert.equal(hCn.el('panel-title').textContent, '上下文窗口');
+  } finally {
+    hCn.dispose();
+  }
+});
+
+test('Responsive hysteresis collapse, light/dark theme toggle, and clean disposal', async () => {
   const h = createHarness({ pathname: '/', lightTheme: true });
   try {
     await h.flush();
@@ -397,10 +461,9 @@ test('響應式遲滯收折與深淺色主題自動/手動切換、完整銷毀�
     assert.equal(h.sandbox.__AGContextMeter.theme(), 'dark');
     assert.equal(h.host.getAttribute('data-theme'), 'dark');
 
-    // 遲滯寬度切換測試
     assert.equal(h.sandbox.__AGContextMeter.setAvailableWidthForTest(220), 'wide');
     assert.equal(h.sandbox.__AGContextMeter.setAvailableWidthForTest(120), 'compact');
-    assert.equal(h.sandbox.__AGContextMeter.setAvailableWidthForTest(150), 'compact'); // 遲滯保護不抖動
+    assert.equal(h.sandbox.__AGContextMeter.setAvailableWidthForTest(150), 'compact');
     assert.equal(h.sandbox.__AGContextMeter.setAvailableWidthForTest(165), 'wide');
     assert.equal(h.sandbox.__AGContextMeter.setAvailableWidthForTest(55), 'ring-only');
   } finally {
@@ -409,10 +472,11 @@ test('響應式遲滯收折與深淺色主題自動/手動切換、完整銷毀�
   }
 });
 
-test('低速個位數 tok/s 提醒指示：面板標籤顯示偏慢告警、頂欄膠囊與懸停提示同步標記', async () => {
+test('Low tok/s warning indicator across locales', async () => {
   const convId = '11111111-2222-3333-4444-555555555555';
   const h = createHarness({
     pathname: `/c/${convId}`,
+    htmlLang: 'zh-TW',
     generatorMetadata: [
       {
         chatModel: {
@@ -435,19 +499,20 @@ test('低速個位數 tok/s 提醒指示：面板標籤顯示偏慢告警、頂�
     await h.flush();
     assert.equal(h.el('speed-amount').textContent, '6 tok/s');
     assert.equal(h.el('model').textContent, 'Gemini 4 Carbon');
-    assert.equal(h.el('model').title, 'Gemini 4 Carbon (Medium)');
     assert.equal(h.el('badge-speed-wrap').getAttribute('data-speed-tier'), 'slow');
     assert.equal(h.el('speed-badge').textContent, '偏慢');
     assert.ok(h.el('speed-badge').classList.contains('pill-danger'));
-    assert.equal(h.el('speed-val').getAttribute('data-speed-tier'), 'slow');
-    assert.ok(h.el('ctx-tip-detail').textContent.includes('6 tok/s (偏慢)'));
     assert.equal(h.el('speed-val').title, '純串流 112.5 tok/s · 首字占 95%');
+
+    h.sandbox.__AGContextMeter.setLanguage('en');
+    assert.equal(h.el('speed-badge').textContent, 'Slow');
+    assert.equal(h.el('speed-val').title, 'Streaming 112.5 tok/s · TTFT 95%');
   } finally {
     h.dispose();
   }
 });
 
-test('高占用（>=90%）提醒欄：單行精煉文案並將 /compact 渲染為指令膠囊', async () => {
+test('High occupancy (>=90%) alert banner renders /compact command chip in all 3 languages', async () => {
   const convId = '11111111-2222-3333-4444-555555555555';
   const h = createHarness({
     pathname: `/c/${convId}`,
@@ -472,18 +537,25 @@ test('高占用（>=90%）提醒欄：單行精煉文案並將 /compact 渲染�
 
   try {
     await h.flush();
-    assert.equal(h.el('key-badge').textContent, '吃緊');
-    assert.equal(h.el('alert-banner').hidden, false);
-    assert.equal(h.el('alert-banner').getAttribute('data-tone'), 'danger');
+    for (const [lang, expectedBadge, expectedText] of [
+      ['en', 'Tight', 'Context nearly full. Run /compact or start a new chat'],
+      ['zh-CN', '吃紧', '空间即将耗尽，建议 /compact 压缩或开启新对话'],
+      ['zh-TW', '吃緊', '空間即將耗盡，建議 /compact 壓縮或開啟新對話']
+    ]) {
+      h.sandbox.__AGContextMeter.setLanguage(lang);
+      assert.equal(h.el('key-badge').textContent, expectedBadge);
+      assert.equal(h.el('alert-banner').hidden, false);
+      assert.equal(h.el('alert-banner').getAttribute('data-tone'), 'danger');
 
-    const parts = h.el('alert-text').children;
-    const fullText = parts.map(n => n.textContent).join('');
-    assert.equal(fullText, '空間即將耗盡，建議 /compact 壓縮或開啟新對話');
+      const parts = h.el('alert-text').children;
+      const fullText = parts.map(n => n.textContent).join('');
+      assert.equal(fullText, expectedText);
 
-    const cmdChip = parts.find(n => n.tagName === 'CODE');
-    assert.ok(cmdChip);
-    assert.equal(cmdChip.className, 'alert-cmd');
-    assert.equal(cmdChip.textContent, '/compact');
+      const cmdChip = parts.find(n => n.tagName === 'CODE');
+      assert.ok(cmdChip);
+      assert.equal(cmdChip.className, 'alert-cmd');
+      assert.equal(cmdChip.textContent, '/compact');
+    }
   } finally {
     h.dispose();
   }

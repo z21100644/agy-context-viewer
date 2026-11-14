@@ -6,6 +6,87 @@ MAX_BYTES = 256 * 1024 * 1024
 MAX_UNPACKED = 512 * 1024 * 1024
 MAX_CHARS = 100_000_000
 
+def resolve_lang():
+    raw = (os.environ.get('AG_METER_LANG') or os.environ.get('LANG') or 'en').strip().lower().replace('_', '-')
+    if 'zh' in raw and any(k in raw for k in ('tw', 'hk', 'mo', 'hant')):
+        return 'zh-TW'
+    if raw == 'zh' or raw.startswith('zh-'):
+        return 'zh-CN'
+    return 'en'
+
+LANG = resolve_lang()
+
+PY_I18N = {
+    'en': {
+        'limit_reached': 'Local scan resource limit reached; stats incomplete',
+        'unpacked_512': 'Unpacked size exceeds 512 MiB; local scan incomplete',
+        'shared_formula': 'Some shared formulas could not be expanded; counted cached values only',
+        'shared_str_err': 'Shared string index error; stats incomplete',
+        'no_formula_cache': 'Some formulas lack cached results; formulas not recalculated',
+        'embedded_n': lambda n: f'{n} embedded image(s)/object(s) not visually tokenized',
+        'ext_links': 'External link targets not read',
+        'vba_macro': 'Macro binary content excluded',
+        'unpacked_large': 'Unpacked size too large; stats incomplete',
+        'embedded_generic': 'Embedded images/objects not visually tokenized',
+        'over_256': 'Attachment exceeds 256 MiB; local scan incomplete',
+        'xls_formula_cov': 'Cached cell values; legacy formula source not guaranteed',
+        'xls_warn': 'XLS counts cached cell values; formulas and embedded objects may be incomplete',
+        'xls_html': 'HTML/XML table export disguised as .xls; extracted as text',
+        'xlsb_formula_cov': 'Cached cell values',
+        'xlsb_warn': 'XLSB counts cached cell values; formulas and embedded objects may be incomplete',
+        'pdf_blank': 'Contains textless page(s); scanned image content not fully counted',
+        'pdf_img': 'PDF images not visually tokenized',
+        'img_label': 'Image',
+        'unsupported': 'Attachment type not supported for content parsing; marked as unknown',
+    },
+    'zh-CN': {
+        'limit_reached': '达到本地扫描资源上限，统计不完整',
+        'unpacked_512': '解压后大小超过 512 MiB，本地扫描未完成',
+        'shared_formula': '部分共享公式无法展开，仅计入已保存的值',
+        'shared_str_err': '共享字符串索引异常，统计不完整',
+        'no_formula_cache': '部分公式无缓存结果，未重新计算公式',
+        'embedded_n': lambda n: f'{n} 个内嵌图片/对象未执行视觉分词',
+        'ext_links': '外部链接目标内容未读取',
+        'vba_macro': '宏二进制内容未计入',
+        'unpacked_large': '解压后大小过大，统计不完整',
+        'embedded_generic': '内嵌图片/对象未执行视觉分词',
+        'over_256': '附件超过 256 MiB，本地扫描未完成',
+        'xls_formula_cov': '已保存的单元格值；旧格式公式源码不保证可见',
+        'xls_warn': 'XLS 计入已保存的单元格值；公式源码、内嵌对象不保证完整',
+        'xls_html': '文件为 HTML/XML 格式的表格导出，已按文本提取',
+        'xlsb_formula_cov': '已保存的单元格值',
+        'xlsb_warn': 'XLSB 计入已保存的单元格值；公式源码、内嵌对象不保证完整',
+        'pdf_blank': '存在无文字页面，扫描图内容未计全',
+        'pdf_img': 'PDF 图片未执行视觉分词',
+        'img_label': '图片',
+        'unsupported': '此附件类型暂不支持内容解析，明确列为未知',
+    },
+    'zh-TW': {
+        'limit_reached': '達到本機掃描資源上限，統計不完整',
+        'unpacked_512': '解壓縮後大小超過 512 MiB，本機掃描未完成',
+        'shared_formula': '部分共用公式無法展開，僅計入已儲存的值',
+        'shared_str_err': '共用字串索引異常，統計不完整',
+        'no_formula_cache': '部分公式無快取結果，未重新計算公式',
+        'embedded_n': lambda n: f'{n} 個內嵌圖片/物件未執行視覺分詞',
+        'ext_links': '外部連結目標內容未讀取',
+        'vba_macro': '巨集二進位內容未計入',
+        'unpacked_large': '解壓縮後大小過大，統計不完整',
+        'embedded_generic': '內嵌圖片/物件未執行視覺分詞',
+        'over_256': '附件超過 256 MiB，本機掃描未完成',
+        'xls_formula_cov': '已儲存的儲存格值；舊格式公式原始碼不保證可見',
+        'xls_warn': 'XLS 計入已儲存的儲存格值；公式原始碼、內嵌物件不保證完整',
+        'xls_html': '檔案為 HTML/XML 格式的表格匯出，已依文字擷取',
+        'xlsb_formula_cov': '已儲存的儲存格值',
+        'xlsb_warn': 'XLSB 計入已儲存的儲存格值；公式原始碼、內嵌物件不保證完整',
+        'pdf_blank': '存在無文字頁面，掃描圖內容未計全',
+        'pdf_img': 'PDF 圖片未執行視覺分詞',
+        'img_label': '圖片',
+        'unsupported': '此附件類型暫不支援內容解析，明確列為未知',
+    },
+}
+
+T = PY_I18N[LANG]
+
 class Counter:
     def __init__(self):
         self.chars = self.bytes = self.cjk = 0
@@ -16,7 +97,7 @@ class Counter:
         self.bytes += len(text.encode('utf-8', errors='replace'))
         self.cjk += len(re.findall(r'[\u2e80-\u9fff\uf900-\ufaff]', text))
         if self.chars > MAX_CHARS or time.monotonic() > self.deadline:
-            raise ValueError('達到本機掃描資源上限，統計不完整')
+            raise ValueError(T['limit_reached'])
     def result(self):
         import math
         mid = (self.chars - self.cjk) / 4 + self.cjk * 1.2
@@ -29,7 +110,7 @@ def xlsx_scan(path, counter, result):
     with zipfile.ZipFile(path) as z:
         infos = z.infolist()
         if sum(i.file_size for i in infos) > MAX_UNPACKED:
-            raise ValueError('解壓縮後大小超過 512 MiB，本機掃描未完成')
+            raise ValueError(T['unpacked_512'])
         names = set(z.namelist())
         strings = []
         if 'xl/sharedStrings.xml' in names:
@@ -69,18 +150,18 @@ def xlsx_scan(path, counter, result):
                                     origin, original = shared_formulas[shared_id]
                                     formula = Translator('=' + original, origin=origin).translate_formula(e.attrib['r']).lstrip('=')
                                 except Exception:
-                                    warning = '部分共用公式無法展開，僅計入已儲存的值'
+                                    warning = T['shared_formula']
                                     if warning not in result['unknownParts']: result['unknownParts'].append(warning)
                         if typ == 's' and value:
                             try: value = strings[int(value)]
-                            except (IndexError, ValueError): raise ValueError('共用字串索引異常，統計不完整')
+                            except (IndexError, ValueError): raise ValueError(T['shared_str_err'])
                         elif typ == 'inlineStr':
                             value = ''.join(x.text or '' for x in e.iter() if local(x.tag) == 't')
                         if formula:
                             counter.add('=' + formula)
                             result['formulas'] += 1
                             if not value:
-                                warning = '部分公式無快取結果，未重新計算公式'
+                                warning = T['no_formula_cache']
                                 if warning not in result['unknownParts']: result['unknownParts'].append(warning)
                         if value or formula:
                             result['cells'] += 1
@@ -89,7 +170,6 @@ def xlsx_scan(path, counter, result):
                         e.clear()
                     elif tag == 'row':
                         e.clear()
-        # Include notes, text boxes, chart labels and defined names separately.
         for name in sorted(names):
             if re.fullmatch(r'xl/(?:comments[^/]*|drawings/[^/]+|charts/[^/]+)\.xml', name):
                 root = ET.fromstring(z.read(name))
@@ -98,23 +178,23 @@ def xlsx_scan(path, counter, result):
                         counter.add(e.text)
         embedded = sum(1 for n in names if n.startswith(('xl/media/', 'xl/embeddings/')))
         if embedded:
-            result['unknownParts'].append(f'{embedded} 個內嵌圖片/物件未執行視覺分詞')
+            result['unknownParts'].append(T['embedded_n'](embedded))
         if any(n.startswith('xl/externalLinks/') for n in names):
-            result['unknownParts'].append('外部連結目標內容未讀取')
+            result['unknownParts'].append(T['ext_links'])
         if 'xl/vbaProject.bin' in names:
-            result['unknownParts'].append('巨集二進位內容未計入')
+            result['unknownParts'].append(T['vba_macro'])
 
 def office_xml(path, counter, result, prefix):
     with zipfile.ZipFile(path) as z:
         if sum(i.file_size for i in z.infolist()) > MAX_UNPACKED:
-            raise ValueError('解壓縮後大小過大，統計不完整')
+            raise ValueError(T['unpacked_large'])
         for name in z.namelist():
             if name.startswith(prefix) and name.endswith('.xml'):
                 root = ET.fromstring(z.read(name))
                 for e in root.iter():
                     if local(e.tag) in ('t', 'v') and e.text: counter.add(e.text)
         if any('/media/' in n or '/embeddings/' in n for n in z.namelist()):
-            result['unknownParts'].append('內嵌圖片/物件未執行視覺分詞')
+            result['unknownParts'].append(T['embedded_generic'])
 
 def scan(item):
     path = item['path']
@@ -124,14 +204,14 @@ def scan(item):
     try:
         size = os.path.getsize(path)
         result['fileBytes'] = size
-        if size > MAX_BYTES: raise ValueError('附件超過 256 MiB，本機掃描未完成')
+        if size > MAX_BYTES: raise ValueError(T['over_256'])
         if ext in ('.xlsx', '.xlsm', '.xltx', '.xltm'):
             xlsx_scan(path, counter, result)
         elif ext == '.xls':
             try:
                 import xlrd, io
                 book = xlrd.open_workbook(path, on_demand=True, logfile=io.StringIO())
-                result.update(sheets=book.nsheets, hiddenSheets=0, cells=0, formulaCoverage='已儲存的儲存格值；舊格式公式原始碼不保證可見')
+                result.update(sheets=book.nsheets, hiddenSheets=0, cells=0, formulaCoverage=T['xls_formula_cov'])
                 try:
                     for n in range(book.nsheets):
                         sheet = book.sheet_by_index(n)
@@ -143,9 +223,8 @@ def scan(item):
                                     counter.add(cell.value); counter.add('\t'); result['cells'] += 1
                         book.unload_sheet(n)
                 finally: book.release_resources()
-                result['unknownParts'].append('XLS 計入已儲存的儲存格值；公式原始碼、內嵌物件不保證完整')
+                result['unknownParts'].append(T['xls_warn'])
             except Exception as xls_err:
-                # 相容銀行等系統匯出的偽裝成 .xls 的 HTML / XML / 純文字表格
                 try:
                     with open(path, 'rb') as f:
                         raw = f.read()
@@ -157,7 +236,7 @@ def scan(item):
                             except UnicodeError: pass
                         if text is not None:
                             counter.add(text)
-                            result['unknownParts'].append('檔案為 HTML/XML 格式的表格匯出，已依文字擷取')
+                            result['unknownParts'].append(T['xls_html'])
                         else:
                             raise xls_err
                     else:
@@ -167,7 +246,7 @@ def scan(item):
         elif ext == '.xlsb':
             from pyxlsb import open_workbook
             with open_workbook(path) as book:
-                result.update(sheets=len(book.sheets), cells=0, formulaCoverage='已儲存的儲存格值')
+                result.update(sheets=len(book.sheets), cells=0, formulaCoverage=T['xlsb_formula_cov'])
                 for n, name in enumerate(book.sheets, 1):
                     counter.add(name)
                     with book.get_sheet(n) as sheet:
@@ -175,7 +254,7 @@ def scan(item):
                             for cell in row:
                                 if cell.v is not None:
                                     counter.add(cell.v); counter.add('\t'); result['cells'] += 1
-            result['unknownParts'].append('XLSB 計入已儲存的儲存格值；公式原始碼、內嵌物件不保證完整')
+            result['unknownParts'].append(T['xlsb_warn'])
         elif ext == '.docx': office_xml(path, counter, result, 'word/')
         elif ext == '.pptx': office_xml(path, counter, result, 'ppt/')
         elif ext == '.pdf':
@@ -185,8 +264,8 @@ def scan(item):
             for page in reader.pages:
                 text = page.extract_text() or ''
                 counter.add(text)
-                if not text.strip(): result['unknownParts'].append('存在無文字頁面，掃描圖內容未計全')
-                if page.images: result['unknownParts'].append('PDF 圖片未執行視覺分詞')
+                if not text.strip(): result['unknownParts'].append(T['pdf_blank'])
+                if page.images: result['unknownParts'].append(T['pdf_img'])
         elif ext in ('.txt', '.csv', '.tsv', '.md', '.json', '.jsonl', '.xml', '.yaml', '.yml', '.html', '.htm', '.log', '.py', '.js', '.ts', '.css', '.sql', '.rtf'):
             with open(path, 'rb') as text_file:
                 raw = text_file.read()
@@ -223,10 +302,10 @@ def scan(item):
                 result['low'] = 258
                 result['high'] = 1120
                 result['chars'] = 0
-                result['dimensions'] = '圖片'
+                result['dimensions'] = T['img_label']
             result['status'] = 'parsed'
         else:
-            raise ValueError('此附件類型暫不支援內容解析，明確列為未知')
+            raise ValueError(T['unsupported'])
     except Exception as e:
         result['unknownParts'].append(str(e)[:180])
     c_res = counter.result()

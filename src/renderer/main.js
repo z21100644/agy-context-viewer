@@ -8,8 +8,400 @@
     classifySpeed,
     formatModelLabel,
     classifyRequestError,
-    computeContextShares
+    computeContextShares,
+    normalizeLocale: coreNormalizeLocale,
+    detectLocaleFromCandidates
   } = globalThis.__AGContextMeterCore || {};
+
+  const LANG_CYCLE = ['en', 'zh-CN', 'zh-TW'];
+
+  function normalizeLang(input, fallback = 'en') {
+    if (typeof coreNormalizeLocale === 'function') return coreNormalizeLocale(input, fallback);
+    if (!input || typeof input !== 'string') return fallback;
+    const s = input.trim().replace(/_/g, '-').toLowerCase();
+    if (!s || s === 'auto' || s === 'c' || s === 'posix') return fallback;
+    if (s === 'zh-tw' || s === 'zh-hk' || s === 'zh-mo' || s.startsWith('zh-hant') || s.includes('-tw') || s.includes('-hk')) {
+      return 'zh-TW';
+    }
+    if (s === 'zh' || s.startsWith('zh-')) return 'zh-CN';
+    if (s === 'en' || s.startsWith('en-')) return 'en';
+    return fallback;
+  }
+
+  const UI_I18N = {
+    en: {
+      langShort: 'EN',
+      langName: 'English',
+      langAria: 'Switch language',
+      langTitleAuto: name => `Language: Auto (${name}) · Click to switch`,
+      langTitlePinned: name => `Language: ${name} (Click to switch)`,
+      badgeAria: 'Context window & generation monitor',
+      panelAria: 'Context window monitor panel',
+      panelTitle: 'Context Window',
+      refreshTitle: 'Rescan conversation & attachments',
+      themeAria: 'Switch light/dark theme',
+      themeAuto: isLight => `Auto (${isLight ? 'Light' : 'Dark'})`,
+      themeLight: 'Light',
+      themeDark: 'Dark',
+      themeTitle: modeLabel => `Theme: ${modeLabel} · Click to switch`,
+      closeAria: 'Close panel',
+      closeTitle: 'Close (Esc)',
+      speedLabel: 'Speed',
+      speedLabelTitle: 'Output ÷ Total time (incl. TTFT)',
+      ttftLabel: 'TTFT',
+      ttftLabelTitle: 'Time to First Token',
+      durationLabel: 'Duration',
+      outputLabel: 'Output',
+      drawerTitle: 'Context Breakdown',
+      catSystem: 'System Prompt & Tools',
+      catTools: 'Tool Calls & Outputs',
+      catAssistant: 'Model Responses',
+      catThinking: 'Thinking Process',
+      catUser: 'User Messages',
+      catSummaries: 'Compacted Summaries',
+      catAttachment: 'Attachments',
+      compFootnote: 'Weighted by active context window sections',
+      noActiveChat: 'No active chat',
+      tipIdleDetail: 'Context usage tracks automatically in a chat',
+      errorFallback: 'Error',
+      approxVal: v => `~${v}`,
+      estimating: 'Estimating',
+      tipActualBudget: (pct, rem) => `${pct}% used · ${rem} left`,
+      incompleteSuffix: ' (incl. unparsed files)',
+      tipActualOnly: used => `${used} tokens used`,
+      tipNoLimit: 'Window limit unavailable',
+      tipEst: est => `Est. ≈ ${est} tokens`,
+      tipLimit: lim => `Limit ${lim}`,
+      tipAwaitActual: 'Awaiting server usage',
+      loadedSteps: n => `Loaded ${n} ${n === 1 ? 'step' : 'steps'}`,
+      chatOpened: 'Chat opened',
+      tipWaitFirst: 'Waiting for first model response',
+      tipReading: 'Reading context…',
+      tipSyncing: 'Syncing chat state',
+      usageIdleHint: 'Actual usage syncs automatically when a chat opens',
+      chipCache: v => `Cache ${v}`,
+      chipInput: v => `Input ${v}`,
+      chipOutput: v => `Output ${v}`,
+      hintEst: 'Client-side estimate; updates to exact usage after reply',
+      hintNoCalls: 'No model calls yet; see context breakdown below',
+      hintSyncing: 'Syncing conversation data…',
+      stepsCount: n => `${n} ${n === 1 ? 'step' : 'steps'}`,
+      stepsTitleCompacted: (shown, total, u, a) =>
+        `${shown} active steps after compaction (${total} total) · ${u} ${u === 1 ? 'prompt' : 'prompts'} · ${a} ${a === 1 ? 'reply' : 'replies'}`,
+      stepsTitleNormal: (u, a) =>
+        `${u} ${u === 1 ? 'prompt' : 'prompts'} · ${a} ${a === 1 ? 'reply' : 'replies'}`,
+      scanning: 'Scanning…',
+      pendingScan: 'Pending',
+      totalVal: (v, inc) => `Total ${v}${inc ? ' +' : ''}`,
+      approxTotalVal: (v, inc) => `~${v}${inc ? ' +' : ''}`,
+      unknownShare: 'Unknown',
+      rowTipActual: (tok, pct) => `~${tok} tokens (${pct} of active context)`,
+      rowTipShare: pct => `${pct} of active context`,
+      fileJoiner: ', ',
+      moreFiles: total => ` (${total} files total)`,
+      updatedAt: timeStr => `Updated ${timeStr}`,
+      statusIdle: 'Idle',
+      statusOverflow: 'Overflow',
+      statusTight: 'Tight',
+      statusHigh: 'High',
+      statusOk: 'OK',
+      statusRecorded: 'Recorded',
+      statusEst: 'Est.',
+      statusSyncing: 'Syncing',
+      statusReady: 'Ready',
+      overLimit: lim => `Over ${lim} limit`,
+      overServerLimit: 'Over server capacity limit',
+      zeroLeft: '0 left',
+      leftVal: v => `${v} left`,
+      approxLeftVal: v => `~${v} left`,
+      tokensNoLimit: 'tokens (no limit reported)',
+      tokensLocalEst: 'tokens (local estimate)',
+      waitingRequestData: 'Waiting for request data',
+      alertHighOccupancy: 'Context nearly full. Run /compact or start a new chat',
+      alertStale: err => `Live stats delayed (${err})`,
+      alertUnknownFiles: n =>
+        `${n} ${n === 1 ? 'attachment' : 'attachments'} could not be parsed locally; actual usage may be higher`,
+      speedMeasuring: 'Live',
+      speedGenerating: 'Generating…',
+      speedStreamingTps: tps => `Streaming ${tps} tok/s`,
+      speedIncludesTtft: 'Includes TTFT',
+      speedTtftShare: pct => `TTFT ${pct}%`,
+      ttftTitle: sec => `Time to first token: ${sec}s`,
+      durTitle: (dur, stream) => `Total ${dur}s${stream != null ? ` · Streaming ${stream}s` : ''}`,
+      outTitle: (out, thk) => `Output ${out} tokens${thk ? ` (incl. ${thk} thinking)` : ''}`,
+      speedFallback: { fast: 'Fast', smooth: 'Smooth', fair: 'Fair', slow: 'Slow' },
+      errNotReady: 'Background service not ready',
+      errTimeout: 'Read timeout',
+      errScanHttp: code => `Scan bridge HTTP ${code}`,
+      errRestartForScan: 'Restart Antigravity to enable full context breakdown scan',
+      errScanFailed: 'Scan failed',
+      errInvalidConv: 'Invalid local conversation',
+      errNoTrajectory: 'Conversation history unavailable',
+      errLocalApiTimeout: 'Local API read timeout',
+      errResponseTooLarge: 'Local response too large; scan incomplete',
+      errMainWinOnly: 'Only local main window calls are allowed',
+      errPayloadTooLarge: 'Request payload too large'
+    },
+    'zh-CN': {
+      langShort: '简',
+      langName: '简体中文',
+      langAria: '切换界面语言',
+      langTitleAuto: name => `语言：跟随 IDE（${name}）· 点击切换`,
+      langTitlePinned: name => `语言：${name}（点击切换）`,
+      badgeAria: '对话上下文与生成监控',
+      panelAria: '上下文窗口监控面板',
+      panelTitle: '上下文窗口',
+      refreshTitle: '重新扫描对话与附件',
+      themeAria: '切换深浅色主题',
+      themeAuto: isLight => `跟随 IDE（当前${isLight ? '浅色' : '深色'}）`,
+      themeLight: '固定浅色',
+      themeDark: '固定深色',
+      themeTitle: modeLabel => `主题：${modeLabel}（点击切换）`,
+      closeAria: '关闭面板',
+      closeTitle: '关闭 (Esc)',
+      speedLabel: '整体速率',
+      speedLabelTitle: '产出 ÷ 总耗时（含首字延迟）',
+      ttftLabel: '首字延迟',
+      ttftLabelTitle: '',
+      durationLabel: '总耗时',
+      outputLabel: '本轮产出',
+      drawerTitle: '当前上下文占比',
+      catSystem: '系统提示与工具定义',
+      catTools: '工具调用与输出',
+      catAssistant: '模型回复',
+      catThinking: '思考过程',
+      catUser: '用户消息',
+      catSummaries: '压缩摘要',
+      catAttachment: '附件内容',
+      compFootnote: '按当前有效窗口各区块权重计算',
+      noActiveChat: '尚未开启对话',
+      tipIdleDetail: '进入对话后自动追踪上下文容量',
+      errorFallback: '异常',
+      approxVal: v => `约 ${v}`,
+      estimating: '估算中',
+      tipActualBudget: (pct, rem) => `${pct}% 已用 · 剩余 ${rem}`,
+      incompleteSuffix: '（含未知附件）',
+      tipActualOnly: used => `已用 ${used} tokens`,
+      tipNoLimit: '未返回窗口上限',
+      tipEst: est => `预估 ≈ ${est} tokens`,
+      tipLimit: lim => `上限 ${lim}`,
+      tipAwaitActual: '待服务器返回实际值',
+      loadedSteps: n => `已加载 ${n} 步对话`,
+      chatOpened: '已开启对话',
+      tipWaitFirst: '等待首次模型请求返回容量',
+      tipReading: '正在读取上下文…',
+      tipSyncing: '同步对话状态中',
+      usageIdleHint: '开启对话后自动同步实际用量',
+      chipCache: v => `缓存 ${v}`,
+      chipInput: v => `输入 ${v}`,
+      chipOutput: v => `输出 ${v}`,
+      hintEst: '当前为客户端估算，模型回复后将更新为精确用量',
+      hintNoCalls: '尚无模型调用记录，下方可查看当前上下文占比',
+      hintSyncing: '正在同步当前对话数据…',
+      stepsCount: n => `${n} 步`,
+      stepsTitleCompacted: (shown, total, u, a) =>
+        `压缩后有效 ${shown} 步（历史共 ${total} 步） · ${u} 条提问 · ${a} 条回复`,
+      stepsTitleNormal: (u, a) => `${u} 条提问 · ${a} 条回复`,
+      scanning: '计算中…',
+      pendingScan: '待扫描',
+      totalVal: (v, inc) => `共 ${v}${inc ? ' +' : ''}`,
+      approxTotalVal: (v, inc) => `约 ${v}${inc ? ' +' : ''}`,
+      unknownShare: '未知占比',
+      rowTipActual: (tok, pct) => `约 ${tok} tokens（占当前上下文 ${pct}）`,
+      rowTipShare: pct => `占当前上下文 ${pct}`,
+      fileJoiner: '、',
+      moreFiles: total => ` 等 ${total} 个文件`,
+      updatedAt: timeStr => `${timeStr} 更新`,
+      statusIdle: '待命',
+      statusOverflow: '超限',
+      statusTight: '吃紧',
+      statusHigh: '偏高',
+      statusOk: '正常',
+      statusRecorded: '已记录',
+      statusEst: '估算',
+      statusSyncing: '同步中',
+      statusReady: '就绪',
+      overLimit: lim => `超出 ${lim} 上限`,
+      overServerLimit: '超出服务器容量上限',
+      zeroLeft: '剩余 0',
+      leftVal: v => `剩余 ${v}`,
+      approxLeftVal: v => `约剩 ${v}`,
+      tokensNoLimit: 'tokens（未提供上限）',
+      tokensLocalEst: 'tokens（本地估算）',
+      waitingRequestData: '等待请求数据',
+      alertHighOccupancy: '空间即将耗尽，建议 /compact 压缩或开启新对话',
+      alertStale: err => `实时统计读取延迟（${err}）`,
+      alertUnknownFiles: n => `有 ${n} 个附件无法本地解析，实际用量可能高于估算`,
+      speedMeasuring: '计算',
+      speedGenerating: '生成中…',
+      speedStreamingTps: tps => `纯流式 ${tps} tok/s`,
+      speedIncludesTtft: '含首字延迟计算',
+      speedTtftShare: pct => `首字占 ${pct}%`,
+      ttftTitle: sec => `首字延迟 ${sec}s`,
+      durTitle: (dur, stream) => `总耗时 ${dur}s${stream != null ? ` · 流式输出 ${stream}s` : ''}`,
+      outTitle: (out, thk) => `本轮产出 ${out} tokens${thk ? `（含思考 ${thk}）` : ''}`,
+      speedFallback: { fast: '极速', smooth: '流畅', fair: '良好', slow: '偏慢' },
+      errNotReady: '后台服务尚未就绪',
+      errTimeout: '读取超时',
+      errScanHttp: code => `扫描接口 HTTP ${code}`,
+      errRestartForScan: '重启 Antigravity 后启用完整对话构成扫描',
+      errScanFailed: '扫描失败',
+      errInvalidConv: '无效本地对话',
+      errNoTrajectory: '未获取对话历史',
+      errLocalApiTimeout: '本地接口读取超时',
+      errResponseTooLarge: '本地响应过大，扫描不完整',
+      errMainWinOnly: '仅允许本地主窗口调用',
+      errPayloadTooLarge: '请求超出大小限制'
+    },
+    'zh-TW': {
+      langShort: '繁',
+      langName: '繁體中文',
+      langAria: '切換介面語言',
+      langTitleAuto: name => `語言：跟隨 IDE（${name}）· 點擊切換`,
+      langTitlePinned: name => `語言：${name}（點擊切換）`,
+      badgeAria: '對話上下文與生成監控',
+      panelAria: '上下文視窗監控面板',
+      panelTitle: '上下文視窗',
+      refreshTitle: '重新掃描對話與附件',
+      themeAria: '切換深淺色主題',
+      themeAuto: isLight => `跟隨 IDE（目前${isLight ? '淺色' : '深色'}）`,
+      themeLight: '固定淺色',
+      themeDark: '固定深色',
+      themeTitle: modeLabel => `主題：${modeLabel}（點擊切換）`,
+      closeAria: '關閉面板',
+      closeTitle: '關閉 (Esc)',
+      speedLabel: '整體速率',
+      speedLabelTitle: '產出 ÷ 總耗時（含首字延遲）',
+      ttftLabel: '首字延遲',
+      ttftLabelTitle: '',
+      durationLabel: '總耗時',
+      outputLabel: '本輪產出',
+      drawerTitle: '當前上下文占比',
+      catSystem: '系統提示與工具定義',
+      catTools: '工具呼叫與輸出',
+      catAssistant: '模型回覆',
+      catThinking: '思考過程',
+      catUser: '使用者訊息',
+      catSummaries: '壓縮摘要',
+      catAttachment: '附件內容',
+      compFootnote: '依當前有效視窗各區塊權重計算',
+      noActiveChat: '尚未開啟對話',
+      tipIdleDetail: '進入對話後自動追蹤上下文容量',
+      errorFallback: '異常',
+      approxVal: v => `約 ${v}`,
+      estimating: '估算中',
+      tipActualBudget: (pct, rem) => `${pct}% 已用 · 剩餘 ${rem}`,
+      incompleteSuffix: '（含未知附件）',
+      tipActualOnly: used => `已用 ${used} tokens`,
+      tipNoLimit: '未回傳視窗上限',
+      tipEst: est => `預估 ≈ ${est} tokens`,
+      tipLimit: lim => `上限 ${lim}`,
+      tipAwaitActual: '待伺服器回傳實際值',
+      loadedSteps: n => `已載入 ${n} 步對話`,
+      chatOpened: '已開啟對話',
+      tipWaitFirst: '等待首次模型請求回傳容量',
+      tipReading: '正在讀取上下文…',
+      tipSyncing: '同步對話狀態中',
+      usageIdleHint: '開啟對話後自動同步實際用量',
+      chipCache: v => `快取 ${v}`,
+      chipInput: v => `輸入 ${v}`,
+      chipOutput: v => `輸出 ${v}`,
+      hintEst: '目前為用戶端估算，模型回覆後將更新為精確用量',
+      hintNoCalls: '尚無模型呼叫紀錄，下方可檢視當前上下文占比',
+      hintSyncing: '正在同步目前對話資料…',
+      stepsCount: n => `${n} 步`,
+      stepsTitleCompacted: (shown, total, u, a) =>
+        `壓縮後有效 ${shown} 步（歷史共 ${total} 步） · ${u} 則提問 · ${a} 則回覆`,
+      stepsTitleNormal: (u, a) => `${u} 則提問 · ${a} 則回覆`,
+      scanning: '計算中…',
+      pendingScan: '待掃描',
+      totalVal: (v, inc) => `共 ${v}${inc ? ' +' : ''}`,
+      approxTotalVal: (v, inc) => `約 ${v}${inc ? ' +' : ''}`,
+      unknownShare: '未知占比',
+      rowTipActual: (tok, pct) => `約 ${tok} tokens（占當前上下文 ${pct}）`,
+      rowTipShare: pct => `占當前上下文 ${pct}`,
+      fileJoiner: '、',
+      moreFiles: total => ` 等 ${total} 個檔案`,
+      updatedAt: timeStr => `${timeStr} 更新`,
+      statusIdle: '待命',
+      statusOverflow: '超限',
+      statusTight: '吃緊',
+      statusHigh: '偏高',
+      statusOk: '正常',
+      statusRecorded: '已記錄',
+      statusEst: '估算',
+      statusSyncing: '同步中',
+      statusReady: '就緒',
+      overLimit: lim => `超出 ${lim} 上限`,
+      overServerLimit: '超出伺服器容量上限',
+      zeroLeft: '剩餘 0',
+      leftVal: v => `剩餘 ${v}`,
+      approxLeftVal: v => `約剩 ${v}`,
+      tokensNoLimit: 'tokens（未提供上限）',
+      tokensLocalEst: 'tokens（本機估算）',
+      waitingRequestData: '等待請求資料',
+      alertHighOccupancy: '空間即將耗盡，建議 /compact 壓縮或開啟新對話',
+      alertStale: err => `即時統計讀取延遲（${err}）`,
+      alertUnknownFiles: n => `有 ${n} 個附件無法本機解析，實際用量可能高於估算`,
+      speedMeasuring: '計算',
+      speedGenerating: '生成中…',
+      speedStreamingTps: tps => `純串流 ${tps} tok/s`,
+      speedIncludesTtft: '含首字延遲計算',
+      speedTtftShare: pct => `首字占 ${pct}%`,
+      ttftTitle: sec => `首字延遲 ${sec}s`,
+      durTitle: (dur, stream) => `總耗時 ${dur}s${stream != null ? ` · 串流輸出 ${stream}s` : ''}`,
+      outTitle: (out, thk) => `本輪輸出 ${out} tokens${thk ? `（含思考 ${thk}）` : ''}`,
+      speedFallback: { fast: '極速', smooth: '流暢', fair: '良好', slow: '偏慢' },
+      errNotReady: '背景服務尚未就緒',
+      errTimeout: '讀取逾時',
+      errScanHttp: code => `掃描介面 HTTP ${code}`,
+      errRestartForScan: '重啟 Antigravity 後啟用完整對話構成掃描',
+      errScanFailed: '掃描失敗',
+      errInvalidConv: '無效本機對話',
+      errNoTrajectory: '未取得對話歷史',
+      errLocalApiTimeout: '本機介面讀取逾時',
+      errResponseTooLarge: '本機回應過大，掃描不完整',
+      errMainWinOnly: '僅允許本機主視窗呼叫',
+      errPayloadTooLarge: '請求超出大小限制'
+    }
+  };
+
+  function formatRuntimeError(raw, t) {
+    if (!raw) return '';
+    const msg = String(raw);
+    if (msg === '__ERR_NOT_READY__' || msg === '背景服務尚未就緒' || msg === '后台服务尚未就绪' || msg === 'Background service not ready') {
+      return t.errNotReady;
+    }
+    if (msg === '__ERR_TIMEOUT__' || msg === '讀取逾時' || msg === '读取超时' || msg === 'Read timeout') {
+      return t.errTimeout;
+    }
+    if (
+      msg === '__ERR_RESTART_SCAN__' ||
+      msg === '重啟 Antigravity 後啟用完整對話構成掃描' ||
+      msg === '重启 Antigravity 后启用完整对话构成扫描' ||
+      msg === 'Restart Antigravity to enable full context breakdown scan'
+    ) {
+      return t.errRestartForScan;
+    }
+    if (msg === '__ERR_SCAN_FAILED__' || msg === '掃描失敗' || msg === '扫描失败' || msg === 'Scan failed') {
+      return t.errScanFailed;
+    }
+    if (msg === '無效本機對話' || msg === '无效本地对话' || msg === 'Invalid local conversation') return t.errInvalidConv;
+    if (msg === '未取得對話歷史' || msg === '未获取对话历史' || msg === 'Conversation history unavailable') return t.errNoTrajectory;
+    if (msg === '本機介面讀取逾時' || msg === '本地接口读取超时' || msg === 'Local API read timeout') return t.errLocalApiTimeout;
+    if (msg === '本機回應過大，掃描不完整' || msg === '本地响应过大，扫描不完整' || msg === 'Local response too large; scan incomplete') {
+      return t.errResponseTooLarge;
+    }
+    if (msg === '僅允許本機主視窗呼叫' || msg === '仅允许本地主窗口调用' || msg === 'Only local main window calls are allowed') {
+      return t.errMainWinOnly;
+    }
+    if (msg === '請求超出大小限制' || msg === '请求超出大小限制' || msg === 'Request payload too large') {
+      return t.errPayloadTooLarge;
+    }
+    const scanHttp = msg.match(/^(?:__ERR_SCAN_HTTP__|掃描介面 HTTP|扫描接口 HTTP|Scan bridge HTTP)\s*(\d+)$/i);
+    if (scanHttp) return t.errScanHttp(scanHttp[1]);
+    return msg;
+  }
 
   const host = document.createElement('div');
   host.id = 'ag-context-meter';
@@ -26,6 +418,46 @@
 
   (document.body || document.documentElement).appendChild(host);
   const el = id => shadow.getElementById(id);
+
+  // ==========================================================================
+  // 0. 多語系偵測與切換 (English / 简体中文 / 繁體中文)
+  // ==========================================================================
+  let currentLangMode = 'auto';
+  try {
+    const savedLang = typeof localStorage !== 'undefined' && localStorage.getItem('ag_lang_mode');
+    if (savedLang === 'auto' || savedLang === 'en' || savedLang === 'zh-CN' || savedLang === 'zh-TW') {
+      currentLangMode = savedLang;
+    }
+  } catch {}
+
+  function detectHostLocale() {
+    try {
+      const docLang = document.documentElement?.getAttribute?.('lang') || document.documentElement?.lang || '';
+      const bodyLang = document.body?.getAttribute?.('lang') || document.body?.lang || '';
+      const cfgLang =
+        (typeof window !== 'undefined' && (window.__APP_CONFIG__?.locale || window.__APP_CONFIG__?.language)) || '';
+      const navLang = (typeof navigator !== 'undefined' && navigator.language) || '';
+      const navLangs =
+        typeof navigator !== 'undefined' && Array.isArray(navigator.languages) ? navigator.languages : [];
+      const candidates = [docLang, bodyLang, cfgLang, navLang, ...navLangs];
+      if (typeof detectLocaleFromCandidates === 'function') {
+        return detectLocaleFromCandidates(candidates, 'en');
+      }
+      for (const c of candidates) {
+        if (c && String(c).trim()) return normalizeLang(c, 'en');
+      }
+    } catch {}
+    return 'en';
+  }
+
+  function resolveLanguage() {
+    if (currentLangMode === 'en' || currentLangMode === 'zh-CN' || currentLangMode === 'zh-TW') {
+      return currentLangMode;
+    }
+    return detectHostLocale();
+  }
+
+  const getDict = () => UI_I18N[resolveLanguage()] || UI_I18N.en;
 
   const fmt = v => (v == null ? '—' : Math.round(v).toLocaleString('en-US'));
   const short = v => {
@@ -65,11 +497,13 @@
   };
   const getSpeedTier = sp => {
     if (!sp || sp.tps == null) return null;
-    if (typeof classifySpeed === 'function') return classifySpeed(sp.tps);
-    if (sp.tps >= 60) return { level: 'fast', label: '極速', tone: 'good' };
-    if (sp.tps >= 25) return { level: 'smooth', label: '流暢', tone: 'good' };
-    if (sp.tps >= 10) return { level: 'fair', label: '良好', tone: 'warn' };
-    return { level: 'slow', label: '偏慢', tone: 'danger' };
+    const lang = resolveLanguage();
+    if (typeof classifySpeed === 'function') return classifySpeed(sp.tps, lang);
+    const fb = getDict().speedFallback;
+    if (sp.tps >= 60) return { level: 'fast', label: fb.fast, tone: 'good' };
+    if (sp.tps >= 25) return { level: 'smooth', label: fb.smooth, tone: 'good' };
+    if (sp.tps >= 10) return { level: 'fair', label: fb.fair, tone: 'warn' };
+    return { level: 'slow', label: fb.slow, tone: 'danger' };
   };
 
   const state = {
@@ -102,7 +536,7 @@
   const route = () => location.pathname.match(/^\/c\/([a-f\d-]{36})(?:\/|$)/i)?.[1] || null;
 
   // ==========================================================================
-  // 1. 主題偵測與 Windows 標題列色彩同步
+  // 1. 主題偵測、多語系靜態標籤同步與 Windows 標題列色彩同步
   // ==========================================================================
   let currentThemeMode = 'auto';
   try {
@@ -192,16 +626,18 @@
 
   function applyTheme() {
     const activeTheme = resolveTheme();
+    const t = getDict();
     host.setAttribute('data-theme', activeTheme);
     const btn = el('theme-toggle');
     if (btn) {
+      btn.setAttribute('aria-label', t.themeAria);
       const modeLabel =
         currentThemeMode === 'auto'
-          ? `跟隨 IDE（目前${activeTheme === 'light' ? '淺色' : '深色'}）`
+          ? t.themeAuto(activeTheme === 'light')
           : currentThemeMode === 'light'
-            ? '固定淺色'
-            : '固定深色';
-      btn.title = `主題：${modeLabel}（點擊切換）`;
+            ? t.themeLight
+            : t.themeDark;
+      btn.title = t.themeTitle(modeLabel);
     }
     syncNativeOverlayTheme();
   }
@@ -216,26 +652,106 @@
     applyTheme();
   }
 
+  let initialized = false;
+  function applyStaticLabels() {
+    const lang = resolveLanguage();
+    const t = UI_I18N[lang] || UI_I18N.en;
+    host.setAttribute('lang', lang);
+
+    el('badge')?.setAttribute('aria-label', t.badgeAria);
+    el('panel')?.setAttribute('aria-label', t.panelAria);
+    if (el('panel-title')) el('panel-title').textContent = t.panelTitle;
+
+    const refreshBtn = el('refresh');
+    if (refreshBtn) {
+      refreshBtn.setAttribute('aria-label', t.refreshTitle);
+      refreshBtn.title = t.refreshTitle;
+    }
+
+    const langBtn = el('lang-toggle');
+    if (langBtn) {
+      langBtn.textContent = t.langShort;
+      langBtn.setAttribute('aria-label', t.langAria);
+      langBtn.title = currentLangMode === 'auto' ? t.langTitleAuto(t.langName) : t.langTitlePinned(t.langName);
+    }
+
+    const closeBtn = el('close');
+    if (closeBtn) {
+      closeBtn.setAttribute('aria-label', t.closeAria);
+      closeBtn.title = t.closeTitle;
+    }
+
+    const spLbl = el('label-speed');
+    if (spLbl) {
+      spLbl.textContent = t.speedLabel;
+      spLbl.title = t.speedLabelTitle;
+    }
+    const ttftLbl = el('label-ttft');
+    if (ttftLbl) {
+      ttftLbl.textContent = t.ttftLabel;
+      ttftLbl.title = t.ttftLabelTitle;
+    }
+    if (el('label-duration')) el('label-duration').textContent = t.durationLabel;
+    if (el('label-output')) el('label-output').textContent = t.outputLabel;
+
+    if (el('drawer-title')) el('drawer-title').textContent = t.drawerTitle;
+    if (el('label-cat-system')) el('label-cat-system').textContent = t.catSystem;
+    if (el('label-cat-tools')) el('label-cat-tools').textContent = t.catTools;
+    if (el('label-cat-assistant')) el('label-cat-assistant').textContent = t.catAssistant;
+    if (el('label-cat-thinking')) el('label-cat-thinking').textContent = t.catThinking;
+    if (el('label-cat-user')) el('label-cat-user').textContent = t.catUser;
+    if (el('label-cat-summaries')) el('label-cat-summaries').textContent = t.catSummaries;
+    if (el('label-cat-attachment')) el('label-cat-attachment').textContent = t.catAttachment;
+    if (el('comp-footnote')) el('comp-footnote').textContent = t.compFootnote;
+
+    applyTheme();
+    if (initialized) render();
+  }
+
+  function cycleLanguage() {
+    const detected = detectHostLocale();
+    const active = resolveLanguage();
+    const idx = LANG_CYCLE.indexOf(active);
+    const nextLang = LANG_CYCLE[(idx + 1) % LANG_CYCLE.length];
+    currentLangMode = nextLang === detected ? 'auto' : nextLang;
+    try {
+      localStorage?.setItem('ag_lang_mode', currentLangMode);
+    } catch {}
+    applyStaticLabels();
+  }
+
   let themeObserver = null;
   try {
     if (typeof MutationObserver !== 'undefined') {
-      themeObserver = new MutationObserver(() => applyTheme());
+      themeObserver = new MutationObserver(() => {
+        applyTheme();
+        if (currentLangMode === 'auto' && host.getAttribute('lang') !== resolveLanguage()) {
+          applyStaticLabels();
+        }
+      });
       if (document.documentElement) {
         themeObserver.observe(document.documentElement, {
           attributes: true,
-          attributeFilter: ['class', 'style', 'data-theme']
+          attributeFilter: ['class', 'style', 'data-theme', 'lang']
         });
       }
       if (document.body) {
         themeObserver.observe(document.body, {
           attributes: true,
-          attributeFilter: ['class', 'style', 'data-theme']
+          attributeFilter: ['class', 'style', 'data-theme', 'lang']
         });
       }
     }
   } catch {}
 
-  applyTheme();
+  const onLanguageChange = () => {
+    if (currentLangMode === 'auto') applyStaticLabels();
+  };
+  try {
+    window.addEventListener?.('languagechange', onLanguageChange);
+  } catch {}
+
+  applyStaticLabels();
 
   // ==========================================================================
   // 2. 宿主頂欄掛載、Windows 視窗控制鈕留白與寬度自適應
@@ -627,7 +1143,7 @@
       const vw = (typeof window !== 'undefined' && window.innerWidth) || 1280;
       const vh = (typeof window !== 'undefined' && window.innerHeight) || 800;
       const minLeft = Math.max(12, getLeftSidebarRight(vw) + 12);
-      const targetW = 364;
+      const targetW = 376;
       const maxAvailW = Math.max(260, vw - minLeft - 12);
       const effW = Math.min(targetW, maxAvailW);
 
@@ -684,6 +1200,7 @@
   badgeEl?.addEventListener('blur', () => hideContextTooltip());
 
   el('close')?.addEventListener('click', () => togglePanel(false));
+  el('lang-toggle')?.addEventListener('click', () => cycleLanguage());
   el('theme-toggle')?.addEventListener('click', () => cycleTheme());
   el('btn-toggle-details')?.addEventListener('click', () => setDrawerExpanded(!state.drawerOpen, true));
   el('refresh')?.addEventListener('click', () => {
@@ -724,6 +1241,7 @@
     const failure = summarize(
       { chatModel: { retryInfos: [{ error: error.text }] } },
       {
+        lang: resolveLanguage(),
         currentModel: value?.model || state.latest?.model || '',
         cascadeModelConfigs: state.cascadeModelConfigs,
         previousValidContext: value
@@ -748,14 +1266,16 @@
 
   function resolveErrorInfo(d) {
     if (!d) return null;
-    if (d.errorClassification && d.errorClassification.kind && d.errorClassification.kind !== 'none') {
-      return d.errorClassification;
-    }
+    const lang = resolveLanguage();
     if (d.error && typeof classifyRequestError === 'function') {
       return classifyRequestError(d.error, {
+        lang,
         currentModel: d.model || '',
         cascadeModelConfigs: state.cascadeModelConfigs
       });
+    }
+    if (d.errorClassification && d.errorClassification.kind && d.errorClassification.kind !== 'none') {
+      return d.errorClassification;
     }
     return null;
   }
@@ -812,6 +1332,7 @@
   }
 
   function updateTopCapsule(d, pct, errInfo) {
+    const t = getDict();
     const pctEl = el('badge-pct-val');
     const sepEl = el('badge-speed-sep');
     const speedWrap = el('badge-speed-wrap');
@@ -821,7 +1342,7 @@
 
     if (!state.route) {
       if (pctEl) pctEl.textContent = '—';
-      if (srAmt) srAmt.textContent = '未開啟對話';
+      if (srAmt) srAmt.textContent = t.noActiveChat;
       if (sepEl) sepEl.hidden = true;
       if (speedWrap) {
         speedWrap.hidden = true;
@@ -831,8 +1352,8 @@
     }
 
     if (errInfo && errInfo.kind !== 'canceled') {
-      if (pctEl) pctEl.textContent = errInfo.badgeText || '異常';
-      if (srAmt) srAmt.textContent = errInfo.title || '異常';
+      if (pctEl) pctEl.textContent = errInfo.badgeText || t.errorFallback;
+      if (srAmt) srAmt.textContent = errInfo.title || t.errorFallback;
     } else if (pct != null) {
       const rounded = pct > 0 && pct < 1 ? 1 : Math.round(pct);
       if (pctEl) pctEl.textContent = `${rounded}%`;
@@ -840,10 +1361,10 @@
     } else if (d?.estimate && d?.budget) {
       const estPct = Math.min(99, Math.max(1, Math.round((d.estimate / d.budget) * 100)));
       if (pctEl) pctEl.textContent = `~${estPct}%`;
-      if (srAmt) srAmt.textContent = `約 ${short(d.estimate)}`;
+      if (srAmt) srAmt.textContent = t.approxVal(short(d.estimate));
     } else {
       if (pctEl) pctEl.textContent = '—';
-      if (srAmt) srAmt.textContent = d?.actual != null ? short(d.actual) : '估算中';
+      if (srAmt) srAmt.textContent = d?.actual != null ? short(d.actual) : t.estimating;
     }
 
     const sp = d?.speed;
@@ -869,13 +1390,14 @@
   }
 
   function updateTooltipText(d, session, pct, errInfo, incomplete) {
+    const t = getDict();
     const tipPct = el('ctx-tip-pct');
     const tipDet = el('ctx-tip-detail');
     if (!tipPct || !tipDet) return;
 
     if (!state.route) {
-      tipPct.textContent = '尚未開啟對話';
-      tipDet.textContent = '進入對話後自動追蹤上下文容量';
+      tipPct.textContent = t.noActiveChat;
+      tipDet.textContent = t.tipIdleDetail;
       return;
     }
 
@@ -892,34 +1414,35 @@
     if (d?.actual != null && d?.budget) {
       const usedRound = pct > 0 && pct < 1 ? 1 : Math.round(pct);
       const remTokens = Math.max(0, d.budget - d.actual);
-      tipPct.textContent = `${usedRound}% 已用 · 剩餘 ${short(remTokens)}`;
-      tipDet.textContent = `${short(d.actual)} / ${short(d.budget)} tokens${incomplete ? '（含未知附件）' : ''}${speedSuffix}`;
+      tipPct.textContent = t.tipActualBudget(usedRound, short(remTokens));
+      tipDet.textContent = `${short(d.actual)} / ${short(d.budget)} tokens${incomplete ? t.incompleteSuffix : ''}${speedSuffix}`;
     } else if (d?.actual != null) {
-      tipPct.textContent = `已用 ${short(d.actual)} tokens`;
-      tipDet.textContent = `未回傳視窗上限${speedSuffix}`;
+      tipPct.textContent = t.tipActualOnly(short(d.actual));
+      tipDet.textContent = `${t.tipNoLimit}${speedSuffix}`;
     } else if (d?.estimate != null) {
-      tipPct.textContent = `預估 ≈ ${short(d.estimate)} tokens`;
-      tipDet.textContent = `${d.budget ? `上限 ${short(d.budget)}` : '待伺服器回傳實際值'}${speedSuffix}`;
+      tipPct.textContent = t.tipEst(short(d.estimate));
+      tipDet.textContent = `${d.budget ? t.tipLimit(short(d.budget)) : t.tipAwaitActual}${speedSuffix}`;
     } else if (session) {
       const estTok = Math.round(tokenWeight(session.total));
-      tipPct.textContent = estTok > 0 ? `已載入 ${session.activeSteps ?? session.steps} 步對話` : '已開啟對話';
-      tipDet.textContent = '等待首次模型請求回傳容量';
+      tipPct.textContent = estTok > 0 ? t.loadedSteps(session.activeSteps ?? session.steps) : t.chatOpened;
+      tipDet.textContent = t.tipWaitFirst;
     } else {
-      tipPct.textContent = '正在讀取上下文…';
-      tipDet.textContent = '同步對話狀態中';
+      tipPct.textContent = t.tipReading;
+      tipDet.textContent = t.tipSyncing;
     }
 
     if (state.tooltipOpen) positionContextTooltip();
   }
 
   function renderUsageChips(d, session) {
+    const t = getDict();
     const container = el('usage-chips');
     if (!container) return;
     container.replaceChildren();
 
     if (!state.route) {
       const span = document.createElement('span');
-      span.textContent = '開啟對話後自動同步實際用量';
+      span.textContent = t.usageIdleHint;
       container.appendChild(span);
       return;
     }
@@ -930,9 +1453,9 @@
       const out = d.output || 0;
 
       const items = [];
-      if (cached > 0) items.push({ label: `快取 ${short(cached)}`, cls: 'u-dot u-dot-cache' });
-      items.push({ label: `輸入 ${short(fresh)}`, cls: 'u-dot' });
-      items.push({ label: `輸出 ${short(out)}`, cls: 'u-dot u-dot-out' });
+      if (cached > 0) items.push({ label: t.chipCache(short(cached)), cls: 'u-dot u-dot-cache' });
+      items.push({ label: t.chipInput(short(fresh)), cls: 'u-dot' });
+      items.push({ label: t.chipOutput(short(out)), cls: 'u-dot u-dot-out' });
 
       for (const it of items) {
         const chip = document.createElement('span');
@@ -949,11 +1472,7 @@
     }
 
     const hint = document.createElement('span');
-    hint.textContent = d?.estimate
-      ? '目前為用戶端估算，模型回覆後將更新為精確用量'
-      : session
-        ? '尚無模型呼叫紀錄，下方可檢視當前上下文占比'
-        : '正在同步目前對話資料…';
+    hint.textContent = d?.estimate ? t.hintEst : session ? t.hintNoCalls : t.hintSyncing;
     container.appendChild(hint);
   }
 
@@ -970,7 +1489,7 @@
     target.replaceChildren();
 
     const str = String(message);
-    const cmdRe = /(^|\s)(\/[a-z][a-z0-9-]*)(?=\s|$)/g;
+    const cmdRe = /(^|[\s(（])(\/[a-z][a-z0-9-]*)(?=[\s.,;!?，。；！）)]|$)/g;
     let lastIndex = 0;
     let m;
     while ((m = cmdRe.exec(str)) !== null) {
@@ -1004,16 +1523,17 @@
   ];
 
   function renderComposition(d, session, incomplete) {
+    const t = getDict();
     const stepsPill = el('steps-pill');
     const sessionTotal = el('session-total');
     if (stepsPill) {
       if (session) {
         const shownSteps = session.activeSteps ?? session.steps;
         stepsPill.hidden = false;
-        stepsPill.textContent = `${shownSteps} 步`;
+        stepsPill.textContent = t.stepsCount(shownSteps);
         stepsPill.title = session.compacted
-          ? `壓縮後有效 ${shownSteps} 步（歷史共 ${session.steps} 步） · ${session.userMessages} 則提問 · ${session.assistantMessages} 則回覆`
-          : `${session.userMessages} 則提問 · ${session.assistantMessages} 則回覆`;
+          ? t.stepsTitleCompacted(shownSteps, session.steps, session.userMessages, session.assistantMessages)
+          : t.stepsTitleNormal(session.userMessages, session.assistantMessages);
       } else {
         stepsPill.hidden = true;
       }
@@ -1023,11 +1543,11 @@
 
     if (sessionTotal) {
       if (!session) {
-        sessionTotal.textContent = state.scanBusy ? '計算中…' : state.route ? '待掃描' : '—';
+        sessionTotal.textContent = state.scanBusy ? t.scanning : state.route ? t.pendingScan : '—';
       } else if (d?.actual != null) {
-        sessionTotal.textContent = `共 ${short(d.actual)}${incomplete ? ' +' : ''}`;
+        sessionTotal.textContent = t.totalVal(short(d.actual), incomplete);
       } else if (d?.estimate != null) {
-        sessionTotal.textContent = `約 ${short(d.estimate)}${incomplete ? ' +' : ''}`;
+        sessionTotal.textContent = t.approxTotalVal(short(d.estimate), incomplete);
       } else {
         sessionTotal.textContent = totalWeight > 0 ? '100%' : '0%';
       }
@@ -1042,7 +1562,7 @@
         if (!session) {
           valEl.textContent = '—';
         } else if (item.id === 'attachment-total' && incomplete) {
-          valEl.textContent = share.weight > 0 ? `${share.text}+` : '未知占比';
+          valEl.textContent = share.weight > 0 ? `${share.text}+` : t.unknownShare;
         } else {
           valEl.textContent = share.text;
         }
@@ -1052,13 +1572,13 @@
         rowEl.setAttribute('data-zero', isZero ? 'true' : 'false');
         let tip = '';
         if (session && share.ratio > 0 && d?.actual != null) {
-          tip = `約 ${short(Math.round(d.actual * share.ratio))} tokens（占當前上下文 ${share.text}）`;
+          tip = t.rowTipActual(short(Math.round(d.actual * share.ratio)), share.text);
         } else if (session && share.ratio > 0) {
-          tip = `占當前上下文 ${share.text}`;
+          tip = t.rowTipShare(share.text);
         }
         if (item.id === 'attachment-total' && session?.attachments?.length) {
-          const names = session.attachments.slice(0, 4).map(a => a.name).join('、');
-          const more = session.attachments.length > 4 ? ` 等 ${session.attachments.length} 個檔案` : '';
+          const names = session.attachments.slice(0, 4).map(a => a.name).join(t.fileJoiner);
+          const more = session.attachments.length > 4 ? t.moreFiles(session.attachments.length) : '';
           tip = tip ? `${tip} · ${names}${more}` : `${names}${more}`;
         }
         rowEl.title = tip;
@@ -1074,12 +1594,13 @@
     const updatedEl = el('updated');
     if (updatedEl) {
       const ts = Math.max(state.requestAt || 0, state.scan?.scannedAt || 0);
-      updatedEl.textContent = ts > 0 ? `${new Date(ts).toLocaleTimeString([], { hour12: false })} 更新` : '—';
+      updatedEl.textContent = ts > 0 ? t.updatedAt(new Date(ts).toLocaleTimeString([], { hour12: false })) : '—';
     }
   }
 
   function render() {
     if (state.disposed) return;
+    const t = getDict();
     host.hidden = false;
     host.setAttribute('data-has-session', state.route ? 'true' : 'false');
     ensureHostDocked();
@@ -1100,13 +1621,13 @@
       if (modelEl) modelEl.hidden = true;
       const keyBadge = el('key-badge');
       if (keyBadge) {
-        keyBadge.textContent = '待命';
+        keyBadge.textContent = t.statusIdle;
         keyBadge.className = 'status-pill pill-muted';
       }
       const heroPct = el('key-pct-hero');
       if (heroPct) heroPct.textContent = '—';
       const heroFrac = el('key-fraction');
-      if (heroFrac) heroFrac.textContent = '尚未開啟對話';
+      if (heroFrac) heroFrac.textContent = t.noActiveChat;
       const heroRem = el('key-remaining');
       if (heroRem) heroRem.textContent = '';
       const barFill = el('key-bar-fill');
@@ -1119,7 +1640,7 @@
       renderUsageChips(null, null);
       const idleSpBadge = el('speed-badge');
       if (idleSpBadge) {
-        idleSpBadge.textContent = '待命';
+        idleSpBadge.textContent = t.statusIdle;
         idleSpBadge.className = 'speed-pill pill-muted';
         idleSpBadge.title = '';
       }
@@ -1186,13 +1707,13 @@
 
     if (exceeded) {
       if (keyBadge) {
-        keyBadge.textContent = '超限';
+        keyBadge.textContent = t.statusOverflow;
         keyBadge.className = 'status-pill pill-danger';
       }
       if (heroPct) heroPct.textContent = '100%+';
       const limit = d?.serviceLimit || d?.budget;
-      if (heroFrac) heroFrac.textContent = limit ? `超出 ${short(limit)} 上限` : '超出伺服器容量上限';
-      if (heroRem) heroRem.textContent = '剩餘 0';
+      if (heroFrac) heroFrac.textContent = limit ? t.overLimit(short(limit)) : t.overServerLimit;
+      if (heroRem) heroRem.textContent = t.zeroLeft;
       if (barFill) barFill.style.width = '100%';
       if (cacheFill) cacheFill.style.width = '0%';
     } else if (d?.actual != null && d?.budget) {
@@ -1203,19 +1724,19 @@
           keyBadge.textContent = errInfo.badgeText;
           keyBadge.className = 'status-pill pill-danger';
         } else if (rawPct >= 90) {
-          keyBadge.textContent = '吃緊';
+          keyBadge.textContent = t.statusTight;
           keyBadge.className = 'status-pill pill-danger';
         } else if (rawPct >= 75) {
-          keyBadge.textContent = '偏高';
+          keyBadge.textContent = t.statusHigh;
           keyBadge.className = 'status-pill pill-warn';
         } else {
-          keyBadge.textContent = '正常';
+          keyBadge.textContent = t.statusOk;
           keyBadge.className = 'status-pill pill-good';
         }
       }
       if (heroPct) heroPct.textContent = `${rawPct < 10 ? rawPct.toFixed(1) : Math.round(rawPct)}%`;
       if (heroFrac) heroFrac.textContent = `${short(d.actual)} / ${short(d.budget)}`;
-      if (heroRem) heroRem.textContent = `剩餘 ${short(remainVal)}`;
+      if (heroRem) heroRem.textContent = t.leftVal(short(remainVal));
       if (barFill) barFill.style.width = `${Math.min(100, Math.max(1.2, rawPct)).toFixed(1)}%`;
       if (cacheFill) {
         const cachePct = d.cached > 0 ? Math.min(rawPct, (d.cached / d.budget) * 100) : 0;
@@ -1223,35 +1744,37 @@
       }
     } else if (d?.actual != null) {
       if (keyBadge) {
-        keyBadge.textContent = isHardError ? errInfo.badgeText : '已記錄';
+        keyBadge.textContent = isHardError ? errInfo.badgeText : t.statusRecorded;
         keyBadge.className = isHardError ? 'status-pill pill-danger' : 'status-pill pill-good';
       }
       if (heroPct) heroPct.textContent = short(d.actual);
-      if (heroFrac) heroFrac.textContent = 'tokens（未提供上限）';
+      if (heroFrac) heroFrac.textContent = t.tokensNoLimit;
       if (heroRem) heroRem.textContent = '';
       if (barFill) barFill.style.width = '0%';
       if (cacheFill) cacheFill.style.width = '0%';
     } else if (d?.estimate != null) {
       const estPct = d.budget ? Math.min(100, (d.estimate / d.budget) * 100) : null;
       if (keyBadge) {
-        keyBadge.textContent = isHardError ? errInfo.badgeText : '估算';
+        keyBadge.textContent = isHardError ? errInfo.badgeText : t.statusEst;
         keyBadge.className = isHardError ? 'status-pill pill-danger' : 'status-pill pill-muted';
       }
       if (heroPct) heroPct.textContent = estPct != null ? `~${Math.round(estPct)}%` : `~${short(d.estimate)}`;
-      if (heroFrac) heroFrac.textContent = d.budget ? `約 ${short(d.estimate)} / ${short(d.budget)}` : 'tokens（本機估算）';
-      if (heroRem) heroRem.textContent = d.budget ? `約剩 ${short(Math.max(0, d.budget - d.estimate))}` : '';
+      if (heroFrac) {
+        heroFrac.textContent = d.budget ? `${t.approxVal(short(d.estimate))} / ${short(d.budget)}` : t.tokensLocalEst;
+      }
+      if (heroRem) heroRem.textContent = d.budget ? t.approxLeftVal(short(Math.max(0, d.budget - d.estimate))) : '';
       if (barFill) barFill.style.width = estPct != null ? `${estPct.toFixed(1)}%` : '0%';
       if (cacheFill) cacheFill.style.width = '0%';
     } else {
       if (keyBadge) {
-        keyBadge.textContent = isHardError ? errInfo.badgeText : state.scanBusy ? '同步中' : '就緒';
+        keyBadge.textContent = isHardError ? errInfo.badgeText : state.scanBusy ? t.statusSyncing : t.statusReady;
         keyBadge.className = isHardError ? 'status-pill pill-danger' : 'status-pill pill-muted';
       }
       if (heroPct) heroPct.textContent = '—';
       if (heroFrac) {
         heroFrac.textContent = session
-          ? `已載入 ${session.activeSteps ?? session.steps} 步對話`
-          : '等待請求資料';
+          ? t.loadedSteps(session.activeSteps ?? session.steps)
+          : t.waitingRequestData;
       }
       if (heroRem) heroRem.textContent = '';
       if (barFill) barFill.style.width = '0%';
@@ -1264,13 +1787,13 @@
     if (errInfo && errInfo.kind !== 'none') {
       renderAlertBanner(errInfo.kind === 'canceled' ? 'neutral' : 'danger', errInfo.detail);
     } else if (pct != null && pct >= 90) {
-      renderAlertBanner('danger', '空間即將耗盡，建議 /compact 壓縮或開啟新對話');
+      renderAlertBanner('danger', t.alertHighOccupancy);
     } else if (stale && state.requestError) {
-      renderAlertBanner('warn', `即時統計讀取延遲（${state.requestError}）`);
+      renderAlertBanner('warn', t.alertStale(formatRuntimeError(state.requestError, t)));
     } else if (incomplete) {
-      renderAlertBanner('warn', `有 ${session.unknownFiles} 個附件無法本機解析，實際用量可能高於估算`);
+      renderAlertBanner('warn', t.alertUnknownFiles(session.unknownFiles));
     } else if (state.scanError && !session) {
-      renderAlertBanner('warn', state.scanError);
+      renderAlertBanner('warn', formatRuntimeError(state.scanError, t));
     } else {
       renderAlertBanner(null, '');
     }
@@ -1289,7 +1812,7 @@
         spBadge.textContent = spTier.label;
         spBadge.className = `speed-pill pill-${spTier.tone}`;
       } else {
-        spBadge.textContent = state.requestBusy ? '計算' : '待命';
+        spBadge.textContent = state.requestBusy ? t.speedMeasuring : t.statusIdle;
         spBadge.className = 'speed-pill pill-muted';
       }
     }
@@ -1301,12 +1824,12 @@
           : null;
       const tipParts = [];
       if (sp.streamingTps) {
-        tipParts.push(`純串流 ${sp.streamingTps} tok/s`);
+        tipParts.push(t.speedStreamingTps(sp.streamingTps));
       } else if (sp.tps != null) {
-        tipParts.push('含首字延遲計算');
+        tipParts.push(t.speedIncludesTtft);
       }
       if (ttftShare != null && ttftShare >= 50) {
-        tipParts.push(`首字占 ${ttftShare}%`);
+        tipParts.push(t.speedTtftShare(ttftShare));
       }
       const speedTip = tipParts.join(' · ');
 
@@ -1319,25 +1842,22 @@
       }
       if (spTtft) {
         spTtft.textContent = fmtSec(sp.ttft);
-        spTtft.title = sp.ttft != null ? `首字延遲 ${sp.ttft}s` : '';
+        spTtft.title = sp.ttft != null ? t.ttftTitle(sp.ttft) : '';
       }
       if (spDur) {
         spDur.textContent = fmtSec(sp.duration);
-        spDur.title =
-          sp.duration != null
-            ? `總耗時 ${sp.duration}s${sp.streamingSec != null ? ` · 串流輸出 ${sp.streamingSec}s` : ''}`
-            : '';
+        spDur.title = sp.duration != null ? t.durTitle(sp.duration, sp.streamingSec) : '';
       }
       if (spOut) {
         spOut.textContent = sp.outputTokens ? `${short(sp.outputTokens)} tok` : '—';
         spOut.title = sp.outputTokens
-          ? `本輪輸出 ${fmt(sp.outputTokens)} tokens${sp.thinkingTokens ? `（含思考 ${fmt(sp.thinkingTokens)}）` : ''}`
+          ? t.outTitle(fmt(sp.outputTokens), sp.thinkingTokens ? fmt(sp.thinkingTokens) : '')
           : '';
       }
     } else {
       if (spBadge) spBadge.title = '';
       if (spVal) {
-        spVal.textContent = state.requestBusy ? '生成中…' : '—';
+        spVal.textContent = state.requestBusy ? t.speedGenerating : '—';
         spVal.removeAttribute('data-speed-tier');
         spVal.title = '';
       }
@@ -1368,7 +1888,7 @@
     const timeout = setTimeout(() => controller.abort(), 10000);
     try {
       const csrf = window.__APP_CONFIG__?.csrfToken;
-      if (!csrf) throw new Error('背景服務尚未就緒');
+      if (!csrf) throw new Error('__ERR_NOT_READY__');
       const offset = Math.max(0, state.count - 3);
       const response = await fetch(
         '/exa.language_server_pb.LanguageServerService/GetCascadeTrajectoryGeneratorMetadata',
@@ -1397,6 +1917,7 @@
       state.count = newCount;
       for (let i = rows.length - 1; i >= 0; i--) {
         const value = summarize(rows[i], {
+          lang: resolveLanguage(),
           cascadeModelConfigs: state.cascadeModelConfigs,
           previousValidContext: state.latest
         });
@@ -1415,7 +1936,7 @@
       }
     } catch (e) {
       if (generation === state.generation && !state.disposed) {
-        state.requestError = e.name === 'AbortError' ? '讀取逾時' : e.message;
+        state.requestError = e.name === 'AbortError' ? '__ERR_TIMEOUT__' : e.message;
       }
     } finally {
       clearTimeout(timeout);
@@ -1436,7 +1957,7 @@
     try {
       let result;
       if (window.contextMeterAPI?.scan) {
-        result = await window.contextMeterAPI.scan(id, force);
+        result = await window.contextMeterAPI.scan(id, force, resolveLanguage());
       } else if (window.__AGContextMeterLive?.port) {
         const live = window.__AGContextMeterLive;
         const controller = new AbortController();
@@ -1449,21 +1970,21 @@
               'Content-Type': 'application/json',
               'X-AG-Context-Token': live.token
             },
-            body: JSON.stringify({ id, force }),
+            body: JSON.stringify({ id, force, lang: resolveLanguage() }),
             signal: controller.signal
           });
-          if (!response.ok) throw new Error(`掃描介面 HTTP ${response.status}`);
+          if (!response.ok) throw new Error(`__ERR_SCAN_HTTP__ ${response.status}`);
           result = await response.json();
         } finally {
           clearTimeout(timeout);
           state.controllers.delete(controller);
         }
       } else {
-        throw new Error('重啟 Antigravity 後啟用完整對話構成掃描');
+        throw new Error('__ERR_RESTART_SCAN__');
       }
 
       if (generation !== state.generation || state.disposed) return;
-      if (!result?.ok) throw new Error(result?.error || '掃描失敗');
+      if (!result?.ok) throw new Error(result?.error || '__ERR_SCAN_FAILED__');
 
       state.scan = result.data;
       state.scanError = '';
@@ -1532,6 +2053,7 @@
   window.addEventListener?.('popstate', onRouteHint);
   window.addEventListener?.('hashchange', onRouteHint);
 
+  initialized = true;
   const timer = setInterval(tick, 900);
   tick();
 
@@ -1553,6 +2075,26 @@
         applyTheme();
       }
     },
+    language: () => resolveLanguage(),
+    languageMode: () => currentLangMode,
+    setLanguage: mode => {
+      if (mode === 'auto') {
+        currentLangMode = 'auto';
+      } else if (typeof mode === 'string' && mode.trim()) {
+        const norm = normalizeLang(mode, '');
+        if (norm === 'en' || norm === 'zh-CN' || norm === 'zh-TW') {
+          currentLangMode = norm;
+        } else {
+          return;
+        }
+      } else {
+        return;
+      }
+      try {
+        localStorage?.setItem('ag_lang_mode', currentLangMode);
+      } catch {}
+      applyStaticLabels();
+    },
     getLayoutMode: () => state.layoutMode,
     setAvailableWidthForTest: width => {
       applyLayoutMode(computeNextLayoutMode(width, state.layoutMode));
@@ -1567,7 +2109,9 @@
       requestError: state.requestError,
       scanError: state.scanError,
       scanBusy: state.scanBusy,
-      layoutMode: state.layoutMode
+      layoutMode: state.layoutMode,
+      language: resolveLanguage(),
+      languageMode: currentLangMode
     }),
     dispose() {
       state.disposed = true;
@@ -1583,6 +2127,7 @@
         window.removeEventListener?.('blur', onWindowBlur);
         window.removeEventListener?.('popstate', onRouteHint);
         window.removeEventListener?.('hashchange', onRouteHint);
+        window.removeEventListener?.('languagechange', onLanguageChange);
         navigator?.windowControlsOverlay?.removeEventListener?.('geometrychange', onWindowResize);
       } catch {}
       document.removeEventListener('click', onOutsideClick);

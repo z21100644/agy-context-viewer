@@ -6,11 +6,47 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { loadAsarEngine, getStateDir } = require('./asar-engine');
+const { normalizeLocale, detectEnvLocale } = require('./meter-core');
 
 const asar = loadAsarEngine();
 const sha = buffer => crypto.createHash('sha256').update(buffer).digest('hex');
 
-function findAsarPath(customPath) {
+const INSTALL_I18N = {
+  en: {
+    notFoundCustom: p => `Could not find app.asar at specified path: ${p}`,
+    notFoundAuto: 'Could not auto-detect Antigravity installation (app.asar). Use --path <path-to-app.asar>.',
+    backupMismatch: 'Original backup checksum mismatch; refusing to install over patched archive without valid backup.',
+    unknownTamper:
+      'Target ASAR contains unknown patch traces whose hash does not match installation records; aborting to keep files untouched.',
+    unexpectedUtils: 'Unexpected createWindow source in dist/utils.js; nothing changed.',
+    locked: p =>
+      `Cannot write target file (${p}): locked by a running Antigravity process. Please close Antigravity completely and retry.`
+  },
+  'zh-CN': {
+    notFoundCustom: p => `未在指定路径找到 app.asar: ${p}`,
+    notFoundAuto: '未能自动检测到 Antigravity 安装目录 (app.asar)，请使用 --path <app.asar 路径> 指定。',
+    backupMismatch: '原始备份哈希校验不匹配，为保护宿主文件，拒绝在缺少有效备份的情况下覆盖修补。',
+    unknownTamper: '当前 ASAR 包含未知的修补痕迹且哈希值与安装记录不符，拒绝安装以维持当前文件不变。',
+    unexpectedUtils: 'dist/utils.js 中的 createWindow 结构不匹配，未做任何修改。',
+    locked: p => `无法写入目标文件 (${p})：文件正被运行中的 Antigravity 锁定。请先完全退出 Antigravity 客户端后再试！`
+  },
+  'zh-TW': {
+    notFoundCustom: p => `未在指定路徑找到 app.asar: ${p}`,
+    notFoundAuto: '無法自動偵測到 Antigravity 安裝目錄 (app.asar)，請使用 --path <app.asar 路徑> 指定。',
+    backupMismatch: '原始備份雜湊校驗不符，為保護宿主檔案，拒絕在缺少有效備份的情況下覆蓋修補。',
+    unknownTamper: '目前 ASAR 包含未知的修補修改痕跡且雜湊值不符安裝紀錄，拒絕安裝以維持目前檔案不變。',
+    unexpectedUtils: 'dist/utils.js 中的 createWindow 結構不符，未進行任何變更。',
+    locked: p => `無法寫入目標檔案 (${p})：檔案正被執行中的 Antigravity 鎖定。請先完全結束 Antigravity 用戶端後再執行！`
+  }
+};
+
+function getInstallDict(lang) {
+  const l = normalizeLocale(lang || detectEnvLocale('en'), 'en');
+  return INSTALL_I18N[l] || INSTALL_I18N.en;
+}
+
+function findAsarPath(customPath, lang) {
+  const t = getInstallDict(lang);
   if (customPath) {
     let resolved = path.resolve(customPath);
     if (fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
@@ -20,7 +56,7 @@ function findAsarPath(customPath) {
       if (fs.existsSync(direct)) return direct;
     }
     if (fs.existsSync(resolved)) return resolved;
-    throw new Error(`Could not find app.asar at specified path: ${customPath}`);
+    throw new Error(t.notFoundCustom(customPath));
   }
   const home = os.homedir();
   const candidates = [];
@@ -49,7 +85,7 @@ function findAsarPath(customPath) {
   for (const p of candidates) {
     if (fs.existsSync(p)) return p;
   }
-  throw new Error('Could not auto-detect Antigravity installation (app.asar). Use --path <path-to-app.asar>.');
+  throw new Error(t.notFoundAuto);
 }
 
 async function tryHotInject() {
@@ -137,9 +173,10 @@ async function tryHotInject() {
 }
 
 async function install(options = {}) {
+  const t = getInstallDict(options.lang);
   const customPathIdx = process.argv.indexOf('--path');
   const customPath = options.path || (customPathIdx >= 0 ? process.argv[customPathIdx + 1] : null);
-  const installed = findAsarPath(customPath);
+  const installed = findAsarPath(customPath, options.lang);
   const stateDir = getStateDir();
   let sourceArchive = installed;
   let previousManifest = null;
@@ -166,7 +203,7 @@ async function install(options = {}) {
       }
 
       if (!matchedBackup) {
-        throw new Error('Original backup checksum mismatch; refusing to install over patched archive without valid backup.');
+        throw new Error(t.backupMismatch);
       }
       sourceArchive = matchedBackup;
       if (fs.existsSync(installed + '.unpacked') && !fs.existsSync(sourceArchive + '.unpacked')) {
@@ -188,7 +225,7 @@ async function install(options = {}) {
 
   // 若目前檔案不是已知修補檔，但卻包含修補痕跡，說明可能處於未知竄改狀態，拒絕安裝以維持目前檔案不變
   if (sourceArchive === installed && originalUtils.includes('installContextMeter')) {
-    throw new Error('目前 ASAR 包含未知的修補修改痕跡且雜湊值不符安裝紀錄，無法確認安全處理，拒絕安裝以維持目前檔案不變。');
+    throw new Error(t.unknownTamper);
   }
 
   if (originalUtils.includes('installContextMeter')) {
@@ -202,7 +239,7 @@ async function install(options = {}) {
   }
   const marker = '    void win.loadURL(url);';
   if (originalUtils.split(marker).length !== 2) {
-    throw new Error('Unexpected createWindow source in dist/utils.js; nothing changed.');
+    throw new Error(t.unexpectedUtils);
   }
 
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
@@ -244,7 +281,7 @@ async function install(options = {}) {
       const regex = /\r?\n?\/\/ Context Meter v2: narrow read-only conversation scan API\r?\nelectron_1\.contextBridge\.exposeInMainWorld\("contextMeterAPI",\s*\{[\s\S]*?\}\);\r?\n?/g;
       preloadContent = preloadContent.replace(regex, '\n');
     }
-    preloadContent += `\n${preloadMarker}\nelectron_1.contextBridge.exposeInMainWorld("contextMeterAPI", { scan: (id, force) => electron_1.ipcRenderer.invoke("context-meter:scan", id, force === true), syncOverlay: (opts) => electron_1.ipcRenderer.invoke("context-meter:sync-overlay", opts) });\n`;
+    preloadContent += `\n${preloadMarker}\nelectron_1.contextBridge.exposeInMainWorld("contextMeterAPI", { scan: (id, force, lang) => electron_1.ipcRenderer.invoke("context-meter:scan", id, force === true, lang), syncOverlay: (opts) => electron_1.ipcRenderer.invoke("context-meter:sync-overlay", opts) });\n`;
     fs.writeFileSync(preloadPath, preloadContent);
 
     const additions = [
@@ -326,7 +363,7 @@ async function install(options = {}) {
       fs.copyFileSync(packed, installed);
     } catch (err) {
       if (err.code === 'EBUSY' || err.code === 'EPERM') {
-        throw new Error(`無法寫入目標檔案 (${installed})：檔案正被執行中的 Antigravity 鎖定。請先完全結束 Antigravity 用戶端後再執行！`);
+        throw new Error(t.locked(installed));
       }
       throw err;
     }

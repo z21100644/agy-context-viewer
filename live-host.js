@@ -46,7 +46,7 @@ const MAX_BODY_BYTES = 64 * 1024;
       if (bodyLength > MAX_BODY_BYTES) {
         exceeded = true;
         res.writeHead(413, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ ok: false, error: '請求超出大小限制' }));
+        res.end(JSON.stringify({ ok: false, error: 'Request payload too large' }));
         req.destroy();
         return;
       }
@@ -56,7 +56,7 @@ const MAX_BODY_BYTES = 64 * 1024;
       if (exceeded) return;
       try {
         const request = JSON.parse(body || '{}');
-        const data = await collect(api.origin, request.id, { force: request.force === true });
+        const data = await collect(api.origin, request.id, { force: request.force === true, lang: request.lang });
         res.setHeader('Content-Type', 'application/json');
         res.end(JSON.stringify({ ok: true, data }));
       } catch (e) {

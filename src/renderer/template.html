@@ -1,5 +1,5 @@
-<!-- 頂欄單一自適應膠囊 -->
-<button id="badge" class="capsule" type="button" aria-label="對話上下文與生成監控" aria-describedby="context-tooltip" aria-expanded="false">
+<!-- Adaptive Topbar Capsule -->
+<button id="badge" class="capsule" type="button" aria-label="Context window &amp; generation monitor" aria-describedby="context-tooltip" aria-expanded="false">
   <svg id="ring-svg" class="ring-svg" width="15" height="15" viewBox="0 0 15 15" aria-hidden="true">
     <circle id="ring-track" class="ring-track" cx="7.5" cy="7.5" r="5.75" fill="none" stroke-width="1.9"></circle>
     <circle id="ring-fill" class="ring-fill" cx="7.5" cy="7.5" r="5.75" fill="none" stroke-width="1.9" stroke-linecap="round" transform="rotate(-90 7.5 7.5)" stroke-dasharray="2.8 4.42"></circle>
@@ -10,38 +10,39 @@
     <span id="badge-live-dot" class="live-dot" hidden aria-hidden="true"></span>
     <span id="speed-amount"></span>
   </span>
-  <span id="amount" class="sr-only">未開啟對話</span>
+  <span id="amount" class="sr-only">No active chat</span>
 </button>
 
-<!-- 懸停快速資訊微氣泡 -->
+<!-- Quick Hover Tooltip -->
 <div id="context-tooltip" role="tooltip" data-visible="false" data-placement="bottom">
-  <div id="ctx-tip-pct" class="tip-primary">尚未開啟對話</div>
-  <div id="ctx-tip-detail" class="tip-secondary">點擊查看上下文視窗詳情</div>
+  <div id="ctx-tip-pct" class="tip-primary">No active chat</div>
+  <div id="ctx-tip-detail" class="tip-secondary">Click to view context window details</div>
 </div>
 
-<!-- 單一極簡懸浮面板 -->
-<section id="panel" class="panel" hidden aria-label="上下文視窗監控面板">
-  <!-- 1. 頂欄 -->
+<!-- Minimalist Floating Panel -->
+<section id="panel" class="panel" hidden aria-label="Context window monitor panel">
+  <!-- 1. Header -->
   <div class="panel-header">
     <div class="header-left">
-      <span class="panel-title">上下文視窗</span>
+      <span id="panel-title" class="panel-title">Context Window</span>
       <span id="model" class="model-chip" hidden>—</span>
     </div>
     <div class="header-actions">
-      <span id="key-badge" class="status-pill pill-muted">待命</span>
-      <button id="refresh" class="icon-btn" type="button" aria-label="重新掃描對話與附件" title="重新掃描對話與附件">
+      <span id="key-badge" class="status-pill pill-muted">Idle</span>
+      <button id="refresh" class="icon-btn" type="button" aria-label="Rescan conversation &amp; attachments" title="Rescan conversation &amp; attachments">
         <svg viewBox="0 0 16 16" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M13.5 8a5.5 5.5 0 1 1-1.45-3.72M13.5 2.5v3.2h-3.2"></path>
         </svg>
       </button>
-      <button id="theme-toggle" class="icon-btn" type="button" aria-label="切換深淺色主題" title="主題：跟隨 IDE">
+      <button id="lang-toggle" class="icon-btn lang-btn" type="button" aria-label="Switch language" title="Language: Auto">EN</button>
+      <button id="theme-toggle" class="icon-btn" type="button" aria-label="Switch light/dark theme" title="Theme: Auto">
         <svg viewBox="0 0 16 16" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <circle cx="8" cy="8" r="5.5"></circle>
           <path d="M8 2.5v11"></path>
           <path d="M8 2.5a5.5 5.5 0 0 1 0 11" fill="currentColor" fill-opacity="0.22" stroke="none"></path>
         </svg>
       </button>
-      <button id="close" class="icon-btn" type="button" aria-label="關閉面板" title="關閉 (Esc)">
+      <button id="close" class="icon-btn" type="button" aria-label="Close panel" title="Close (Esc)">
         <svg viewBox="0 0 16 16" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
           <path d="M4 4l8 8M12 4l-8 8"></path>
         </svg>
@@ -49,12 +50,12 @@
     </div>
   </div>
 
-  <!-- 2. 核心容量視覺區 -->
+  <!-- 2. Core Capacity Hero -->
   <div class="hero-section">
     <div class="hero-numbers">
       <div class="hero-left">
         <span id="key-pct-hero" class="hero-pct">—</span>
-        <span id="key-fraction" class="hero-fraction">等待對話請求</span>
+        <span id="key-fraction" class="hero-fraction">No active chat</span>
       </div>
       <span id="key-remaining" class="hero-remaining"></span>
     </div>
@@ -66,7 +67,7 @@
 
     <div id="usage-subrow" class="usage-subrow">
       <div id="usage-chips" class="usage-chips">
-        <span id="usage-hint">開啟對話後自動同步實際用量</span>
+        <span id="usage-hint">Actual usage syncs automatically when a chat opens</span>
       </div>
     </div>
 
@@ -79,38 +80,38 @@
     </div>
   </div>
 
-  <!-- 3. 生成效能四欄格 -->
+  <!-- 3. Generation Telemetry Grid -->
   <div id="speed-summary" class="telemetry-grid">
     <div class="t-cell">
       <div class="t-label-row">
-        <span class="t-label" title="產出 ÷ 總耗時（含首字延遲）">整體速率</span>
-        <span id="speed-badge" class="speed-pill pill-muted">待命</span>
+        <span id="label-speed" class="t-label" title="Output ÷ Total time (incl. TTFT)">Speed</span>
+        <span id="speed-badge" class="speed-pill pill-muted">Idle</span>
       </div>
       <div id="speed-val" class="t-value t-value-speed">—</div>
     </div>
     <div class="t-cell">
-      <div class="t-label">首字延遲</div>
+      <div id="label-ttft" class="t-label" title="Time to First Token">TTFT</div>
       <div id="speed-ttft" class="t-value">—</div>
     </div>
     <div class="t-cell">
-      <div class="t-label">總耗時</div>
+      <div id="label-duration" class="t-label">Duration</div>
       <div id="speed-duration" class="t-value">—</div>
     </div>
     <div class="t-cell">
-      <div class="t-label">本輪產出</div>
+      <div id="label-output" class="t-label">Output</div>
       <div id="speed-output" class="t-value">—</div>
     </div>
   </div>
 
-  <!-- 4. 漸進式展開：當前上下文占比與附件 -->
+  <!-- 4. Progressive Disclosure: Context Breakdown & Attachments -->
   <div class="comp-section">
     <button id="btn-toggle-details" class="drawer-trigger" type="button" aria-expanded="false">
       <span class="drawer-left">
-        <span>當前上下文占比</span>
-        <span id="steps-pill" class="steps-pill" hidden>0 步</span>
+        <span id="drawer-title">Context Breakdown</span>
+        <span id="steps-pill" class="steps-pill" hidden>0 steps</span>
       </span>
       <span class="drawer-right">
-        <span id="session-total">待掃描</span>
+        <span id="session-total">Pending</span>
         <svg class="chevron" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           <path d="M4.5 6.25L8 9.75l3.5-3.5"></path>
         </svg>
@@ -130,37 +131,37 @@
 
       <div class="comp-list">
         <div id="row-system" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-sys)"></i>系統提示與工具定義</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-sys)"></i><span id="label-cat-system">System Prompt &amp; Tools</span></span>
           <span id="system" class="comp-val">—</span>
         </div>
         <div id="row-tools" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-tool)"></i>工具呼叫與輸出</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-tool)"></i><span id="label-cat-tools">Tool Calls &amp; Outputs</span></span>
           <span id="tools" class="comp-val">—</span>
         </div>
         <div id="row-assistant" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-ast)"></i>模型回覆</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-ast)"></i><span id="label-cat-assistant">Model Responses</span></span>
           <span id="assistant" class="comp-val">—</span>
         </div>
         <div id="row-thinking" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-thk)"></i>思考過程</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-thk)"></i><span id="label-cat-thinking">Thinking Process</span></span>
           <span id="thinking" class="comp-val">—</span>
         </div>
         <div id="row-user" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-usr)"></i>使用者訊息</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-usr)"></i><span id="label-cat-user">User Messages</span></span>
           <span id="user" class="comp-val">—</span>
         </div>
         <div id="row-summaries" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-sum)"></i>壓縮摘要</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-sum)"></i><span id="label-cat-summaries">Compacted Summaries</span></span>
           <span id="summaries" class="comp-val">—</span>
         </div>
         <div id="row-attachment" class="comp-row">
-          <span class="comp-key"><i class="comp-dot" style="background:var(--c-att)"></i>附件內容</span>
+          <span class="comp-key"><i class="comp-dot" style="background:var(--c-att)"></i><span id="label-cat-attachment">Attachments</span></span>
           <span id="attachment-total" class="comp-val">—</span>
         </div>
       </div>
 
       <div class="comp-footer">
-        <span>依當前有效視窗各區塊權重計算</span>
+        <span id="comp-footnote">Weighted by active context window sections</span>
         <span id="updated">—</span>
       </div>
     </div>

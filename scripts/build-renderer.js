@@ -36,7 +36,7 @@ function buildRenderer() {
   const output = mainTemplate.replace('  /* @INSERT_STYLES_AND_TEMPLATE */', () => domString);
 
   fs.writeFileSync(targetFile, output, 'utf8');
-  console.log(`[建置成功] 渲染層建置完成: ${targetFile} (v${meterVersion}, ${Buffer.byteLength(output, 'utf8')} 位元組)`);
+  console.log(`[build] Built renderer bundle: ${targetFile} (v${meterVersion}, ${Buffer.byteLength(output, 'utf8')} bytes)`);
 }
 
 if (require.main === module) {

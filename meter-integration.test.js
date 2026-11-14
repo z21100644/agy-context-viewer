@@ -5,17 +5,18 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
+const { execFileSync } = require('child_process');
 const { scanFiles, getImageDimensions } = require('./meter-collector');
 const { loadAsarEngine } = require('./asar-engine');
 const { install } = require('./install');
 const { restore } = require('./restore');
+const { resolveCliLocale } = require('./cli');
 
 const sha = buf => crypto.createHash('sha256').update(buf).digest('hex');
 
-test('scanFiles 原生即時解析本機圖片尺寸與文字檔案（無需依賴 Python）', async () => {
+test('scanFiles natively parses local image dimensions and text files without Python', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-meter-scan-'));
   try {
-    // 建立最小合法 320x200 PNG 標頭
     const pngBuf = Buffer.alloc(32);
     Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(pngBuf, 0);
     pngBuf.writeUInt32BE(13, 8);
@@ -31,11 +32,14 @@ test('scanFiles 原生即時解析本機圖片尺寸與文字檔案（無需依�
     const mdPath = path.join(tmpDir, 'notes.md');
     fs.writeFileSync(mdPath, '# 測試筆記\n這是一份本機 Markdown 附件內容。', 'utf8');
 
-    const parsed = await scanFiles([
-      { uri: pngPath, name: 'mock.png', mime: 'image/png', references: 1, source: 'user' },
-      { uri: mdPath, name: 'notes.md', mime: 'text/markdown', references: 2, source: 'user' },
-      { uri: path.join(tmpDir, 'missing.txt'), name: 'missing.txt', mime: 'text/plain', references: 1, source: 'user' }
-    ]);
+    const parsed = await scanFiles(
+      [
+        { uri: pngPath, name: 'mock.png', mime: 'image/png', references: 1, source: 'user' },
+        { uri: mdPath, name: 'notes.md', mime: 'text/markdown', references: 2, source: 'user' },
+        { uri: path.join(tmpDir, 'missing.txt'), name: 'missing.txt', mime: 'text/plain', references: 1, source: 'user' }
+      ],
+      'zh-TW'
+    );
 
     assert.equal(parsed.length, 3);
     assert.equal(parsed[0].status, 'parsed');
@@ -48,13 +52,13 @@ test('scanFiles 原生即時解析本機圖片尺寸與文字檔案（無需依�
     assert.ok(parsed[1].low > 0);
 
     assert.equal(parsed[2].status, 'unknown');
-    assert.ok(parsed[2].unknownParts.length > 0);
+    assert.ok(parsed[2].unknownParts[0].includes('附件不存在'));
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
 });
 
-test('ASAR 封裝修補與無損還原完整性驗證（僅注入極簡核心模組）', async () => {
+test('ASAR patch & lossless restore integrity verification (minimal core modules only)', async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ag-meter-asar-'));
   const prevStateEnv = process.env.AG_METER_STATE_DIR;
   process.env.AG_METER_STATE_DIR = path.join(tmpDir, 'state');
@@ -106,4 +110,20 @@ test('ASAR 封裝修補與無損還原完整性驗證（僅注入極簡核心模
     else process.env.AG_METER_STATE_DIR = prevStateEnv;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   }
+});
+
+test('CLI multi-language output supports --lang en / zh-CN / zh-TW', () => {
+  assert.equal(resolveCliLocale('en'), 'en');
+  assert.equal(resolveCliLocale('zh-CN'), 'zh-CN');
+  assert.equal(resolveCliLocale('zh-TW'), 'zh-TW');
+
+  const cliPath = path.join(__dirname, 'cli.js');
+  const helpEn = execFileSync(process.execPath, [cliPath, 'help', '--lang', 'en'], { encoding: 'utf8' });
+  assert.ok(helpEn.includes('Usage:'));
+
+  const helpCn = execFileSync(process.execPath, [cliPath, 'help', '--lang', 'zh-CN'], { encoding: 'utf8' });
+  assert.ok(helpCn.includes('一键持久化安装'));
+
+  const helpTw = execFileSync(process.execPath, [cliPath, 'help', '--lang', 'zh-TW'], { encoding: 'utf8' });
+  assert.ok(helpTw.includes('一鍵持久化安裝'));
 });

@@ -6,8 +6,50 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { getStateDir } = require('./asar-engine');
+const { normalizeLocale, detectEnvLocale } = require('./meter-core');
 
 const sha = file => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+
+const RESTORE_I18N = {
+  en: {
+    noManifest: 'installation.json not found; nothing to restore.',
+    backupMismatch: 'Backup checksum mismatch; refusing restore.',
+    targetMissing: p => `Target file not found: ${p}`,
+    hashChanged: (p, cur, exp) =>
+      `Verification failed for (${p}): file has been modified by an update or external tool (current: ${cur}..., expected: ${exp}...). Refusing to overwrite.`,
+    locked: p =>
+      `Cannot restore target file (${p}): locked by a running Antigravity process. Please close Antigravity completely and retry.`,
+    restoredMismatch: 'Restored file checksum mismatch.',
+    cliDone: 'Restored the exact pre-meter archive. Restart Antigravity for the change to take effect.'
+  },
+  'zh-CN': {
+    noManifest: '未找到安装记录 (installation.json)，无需还原。',
+    backupMismatch: '备份文件哈希校验不匹配，拒绝还原。',
+    targetMissing: p => `未找到目标文件: ${p}`,
+    hashChanged: (p, cur, exp) =>
+      `目标文件 (${p}) 校验失败：文件内容已被客户端升级或其他操作改变（当前哈希: ${cur}...，预期修补哈希: ${exp}...），拒绝覆盖还原以保护宿主文件。`,
+    locked: p =>
+      `无法还原目标文件 (${p})：文件正被运行中的 Antigravity 锁定。请先完全退出 Antigravity 客户端后再试！`,
+    restoredMismatch: '还原后文件哈希校验不匹配。',
+    cliDone: '已无损还原安装前的原始封装包。完全重启 Antigravity 后生效。'
+  },
+  'zh-TW': {
+    noManifest: '找不到安裝紀錄 (installation.json)，無需還原。',
+    backupMismatch: '備份檔案雜湊校驗不符，拒絕還原。',
+    targetMissing: p => `找不到目標檔案: ${p}`,
+    hashChanged: (p, cur, exp) =>
+      `目標檔案 (${p}) 驗證失敗：檔案內容已被宿主升級、第三方修補或其他操作改變（目前雜湊: ${cur}...，預期修補雜湊: ${exp}...），拒絕覆蓋還原以保護宿主檔案。`,
+    locked: p =>
+      `無法還原目標檔案 (${p})：檔案正被執行中的 Antigravity 鎖定。請先完全結束 Antigravity 用戶端後再執行！`,
+    restoredMismatch: '還原後檔案雜湊校驗不符。',
+    cliDone: '已無損還原安裝前備份的官方封裝檔。完全重啟 Antigravity 後生效。'
+  }
+};
+
+function getRestoreDict(lang) {
+  const l = normalizeLocale(lang || detectEnvLocale('en'), 'en');
+  return RESTORE_I18N[l] || RESTORE_I18N.en;
+}
 
 async function tryHotDispose() {
   try {
@@ -45,55 +87,62 @@ async function tryHotDispose() {
 }
 
 async function restore(options = {}) {
-  const customPathIdx = process.argv.indexOf('--path');
-  const customPath = options.path || (customPathIdx >= 0 ? process.argv[customPathIdx + 1] : null);
+  const t = getRestoreDict(options.lang);
   const stateManifest = path.join(getStateDir(), 'installation.json');
   const localManifest = path.join(__dirname, 'installation.json');
   const manifestPath = fs.existsSync(stateManifest) ? stateManifest : localManifest;
   if (!fs.existsSync(manifestPath)) {
-    throw new Error('installation.json not found; nothing to restore.');
+    throw new Error(t.noManifest);
   }
   const info = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
   const previous = process.argv.includes('--previous') || Boolean(options.previous);
-  // 智能选择最干净的原版备份：优先 pre-meter，其次 backup
-  let backup = previous ? info.previousInstalledBackup : (info.previousInstalledBackup && fs.existsSync(info.previousInstalledBackup) && sha(info.previousInstalledBackup) === info.previousInstalledSha256 ? info.previousInstalledBackup : info.backup);
-  let expected = (backup === info.previousInstalledBackup) ? info.previousInstalledSha256 : info.originalSha256;
+  let backup = previous
+    ? info.previousInstalledBackup
+    : info.previousInstalledBackup &&
+        fs.existsSync(info.previousInstalledBackup) &&
+        sha(info.previousInstalledBackup) === info.previousInstalledSha256
+      ? info.previousInstalledBackup
+      : info.backup;
+  let expected = backup === info.previousInstalledBackup ? info.previousInstalledSha256 : info.originalSha256;
   if (!backup || !fs.existsSync(backup) || sha(backup) !== expected) {
     if (info.backup && fs.existsSync(info.backup) && sha(info.backup) === info.originalSha256) {
       backup = info.backup;
       expected = info.originalSha256;
     } else {
-      throw new Error('Backup checksum mismatch; refusing restore');
+      throw new Error(t.backupMismatch);
     }
   }
   if (!info.installed || !fs.existsSync(info.installed)) {
-    throw new Error(`Target file not found: ${info.installed}`);
+    throw new Error(t.targetMissing(info.installed));
   }
 
   const currentInstalledSha = sha(info.installed);
-  // 1. 当前文件已经等于目标备份时，幂等返回
   if (currentInstalledSha === expected) {
     await tryHotDispose();
     return { restored: info.installed, fromBackup: backup, alreadyRestored: true };
   }
 
-  // 2. 目前檔案必須符合本次安裝紀錄的 patchedSha256，否則拒絕覆蓋以保護宿主
   if (currentInstalledSha !== info.patchedSha256) {
-    throw new Error(`目標檔案 (${info.installed}) 驗證失敗：檔案內容已被宿主升級、第三方修補或其他操作改變（目前雜湊: ${currentInstalledSha.slice(0, 12)}...，預期修補雜湊: ${info.patchedSha256 ? info.patchedSha256.slice(0, 12) : 'null'}...），拒絕覆蓋還原以保護宿主檔案。`);
+    throw new Error(
+      t.hashChanged(
+        info.installed,
+        currentInstalledSha.slice(0, 12),
+        info.patchedSha256 ? info.patchedSha256.slice(0, 12) : 'null'
+      )
+    );
   }
 
-  // 3. 目前檔案符合本次修補雜湊且備份驗證已通過，執行還原
   try {
     fs.copyFileSync(backup, info.installed);
   } catch (err) {
     if (err.code === 'EBUSY' || err.code === 'EPERM') {
-      throw new Error(`無法還原目標檔案 (${info.installed})：檔案正被執行中的 Antigravity 鎖定。請先完全結束 Antigravity 用戶端後再執行！`);
+      throw new Error(t.locked(info.installed));
     }
     throw err;
   }
 
   if (sha(info.installed) !== expected) {
-    throw new Error('Restored file checksum mismatch');
+    throw new Error(t.restoredMismatch);
   }
 
   await tryHotDispose();
@@ -101,8 +150,9 @@ async function restore(options = {}) {
 }
 
 if (require.main === module) {
+  const t = getRestoreDict();
   restore()
-    .then(() => console.log('Restored the exact pre-meter archive. Fully restart Antigravity for the change to take effect.'))
+    .then(() => console.log(t.cliDone))
     .catch(error => {
       console.error(error.message);
       process.exitCode = 1;

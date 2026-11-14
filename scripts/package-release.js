@@ -29,6 +29,8 @@ const COMMON_FILES = [
   'asar-engine.js',
   'package.json',
   'README.md',
+  'README.zh-CN.md',
+  'README.zh-TW.md',
   'AGENTS.md',
   'LICENSE'
 ];
@@ -193,7 +195,7 @@ function buildReleases() {
     }
   }
 
-  console.log(`[打包] 正在建置 Antigravity Context Viewer v${version} 發佈套件...`);
+  console.log(`[package] Building Antigravity Context Viewer v${version} release archives...`);
   const createdPackages = [];
 
   for (const plat of PLATFORMS) {
@@ -214,7 +216,7 @@ function buildReleases() {
     'uninstall.sh',
     ...DEV_SOURCE_FILES
   ];
-  const portableZipName = `antigravity-context-viewer_${version}_zh-TW_portable.zip`;
+  const portableZipName = `antigravity-context-viewer_${version}_portable.zip`;
   const portableZipPath = path.join(DIST_DIR, portableZipName);
   writeZipArchive(portableZipPath, collectEntries(portableFiles, 'antigravity-context-viewer'));
   const portableSizeKb = (fs.statSync(portableZipPath).size / 1024).toFixed(1);
@@ -224,8 +226,8 @@ function buildReleases() {
   const checksumLines = createdPackages.map(p => `${sha256File(p)}  ${path.basename(p)}`);
   const checksumPath = path.join(DIST_DIR, 'checksums.txt');
   fs.writeFileSync(checksumPath, checksumLines.join('\n') + '\n', 'utf8');
-  console.log(`  + checksums.txt (${checksumLines.length} 筆 SHA-256 校驗碼)`);
-  console.log(`[完成] 所有插件發佈包已輸出至: ${DIST_DIR}`);
+  console.log(`  + checksums.txt (${checksumLines.length} SHA-256 digests)`);
+  console.log(`[done] Release archives written to: ${DIST_DIR}`);
 
   return { distDir: DIST_DIR, portableZipPath, createdPackages };
 }

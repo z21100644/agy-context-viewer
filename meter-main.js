@@ -47,15 +47,24 @@ const boundWindows = new WeakSet();
 const boundWebContents = new WeakSet();
 const injectionTimers = new WeakMap();
 
+const { detectEnvLocale, normalizeLocale } = require('./meter-core');
+
+function mainWinError(lang) {
+  const l = normalizeLocale(lang || detectEnvLocale('en'), 'en');
+  if (l === 'zh-CN') return '仅允许本地主窗口调用';
+  if (l === 'zh-TW') return '僅允許本機主視窗呼叫';
+  return 'Only local main window calls are allowed';
+}
+
 function registerIpcOnce() {
   if (registered) return;
   registered = true;
 
-  ipcMain.handle('context-meter:scan', async (event, id, force) => {
+  ipcMain.handle('context-meter:scan', async (event, id, force, lang) => {
     const url = isLocalMainFrameSender(event);
-    if (!url) throw new Error('僅允許本機主視窗呼叫');
+    if (!url) throw new Error(mainWinError(lang));
     try {
-      return { ok: true, data: await collect(url.origin, id, { force: force === true }) };
+      return { ok: true, data: await collect(url.origin, id, { force: force === true, lang }) };
     } catch (e) {
       return { ok: false, error: e.message };
     }
