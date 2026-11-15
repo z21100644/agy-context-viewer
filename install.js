@@ -146,15 +146,8 @@ async function tryHotInject() {
           await evalExpr('window.__AGContextMeterLive=' + JSON.stringify({ port: liveInfo.port, token: liveInfo.token }));
         }
         try {
-          const { collectTokenHistoryAsync, getPluginSettings } = require('./meter-collector');
-          const settingsSnap = getPluginSettings();
-          if (settingsSnap && settingsSnap.ok) {
-            await evalExpr('window.__AGContextMeterSettings=' + JSON.stringify(settingsSnap));
-          }
-          const historyData = await collectTokenHistoryAsync({ force: true });
-          if (historyData && !historyData.loading) {
-            await evalExpr('window.__AGContextMeterHistory=' + JSON.stringify(historyData));
-          }
+          const { readUiPrefs } = require('./meter-collector');
+          await evalExpr('window.__AGContextMeterPrefs=' + JSON.stringify(readUiPrefs()));
         } catch {}
         const evalRes = await evalExpr(bundle);
         if (evalRes && !evalRes.error && !evalRes.result?.exceptionDetails) {
@@ -282,7 +275,7 @@ async function install(options = {}) {
       const regex = /\r?\n?\/\/ Context Meter v2: narrow read-only conversation scan API\r?\nelectron_1\.contextBridge\.exposeInMainWorld\("contextMeterAPI",\s*\{[\s\S]*?\}\);\r?\n?/g;
       preloadContent = preloadContent.replace(regex, '\n');
     }
-    preloadContent += `\n${preloadMarker}\nelectron_1.contextBridge.exposeInMainWorld("contextMeterAPI", { scan: (id, force, lang) => electron_1.ipcRenderer.invoke("context-meter:scan", id, force === true, lang), syncOverlay: (opts) => electron_1.ipcRenderer.invoke("context-meter:sync-overlay", opts) });\n`;
+    preloadContent += `\n${preloadMarker}\nelectron_1.contextBridge.exposeInMainWorld("contextMeterAPI", { scan: (id, force, lang) => electron_1.ipcRenderer.invoke("context-meter:scan", id, force === true, lang), syncOverlay: (opts) => electron_1.ipcRenderer.invoke("context-meter:sync-overlay", opts), savePrefs: (prefs) => electron_1.ipcRenderer.invoke("context-meter:save-prefs", prefs) });\n`;
     fs.writeFileSync(preloadPath, preloadContent);
 
     const additions = [

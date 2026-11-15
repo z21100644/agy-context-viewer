@@ -563,7 +563,7 @@ async function collect(origin, id, options = {}) {
 
     const unknownFiles = attachments.filter(a => a.status !== 'parsed').length;
     const result = {
-      version: '1.0.1',
+      version: '1.1.0',
       conversation: id,
       latest,
       cascadeModelConfigs,
@@ -591,11 +591,73 @@ async function collect(origin, id, options = {}) {
   }
 }
 
+const UI_PREF_VALIDATORS = {
+  langMode: v => v === 'auto' || v === 'en' || v === 'zh-CN' || v === 'zh-TW',
+  themeMode: v => v === 'auto' || v === 'light' || v === 'dark',
+  drawerOpen: v => typeof v === 'boolean'
+};
+
+/** Resolves the persistent UI preferences file path inside the plugin state directory. */
+function resolveUiPrefsPath() {
+  const dir = process.env.AG_METER_STATE_DIR || (() => {
+    const home = os.homedir();
+    const base = process.platform === 'win32'
+      ? (process.env.LOCALAPPDATA || path.join(home, 'AppData', 'Local'))
+      : process.platform === 'darwin'
+        ? path.join(home, 'Library', 'Application Support')
+        : (process.env.XDG_STATE_HOME || path.join(home, '.local', 'state'));
+    return path.join(base, 'AntigravityContextMeter');
+  })();
+  return path.join(dir, 'ui-prefs.json');
+}
+
+/** Filters raw preference input down to schema-valid UI preference fields. */
+function sanitizeUiPrefs(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const clean = {};
+  for (const [k, check] of Object.entries(UI_PREF_VALIDATORS)) {
+    if (check(raw[k])) clean[k] = raw[k];
+  }
+  return clean;
+}
+
+/** Reads persisted UI preferences from disk; returns an empty object if absent or invalid. */
+function readUiPrefs() {
+  try {
+    const file = resolveUiPrefsPath();
+    if (!fs.existsSync(file)) return {};
+    return sanitizeUiPrefs(JSON.parse(fs.readFileSync(file, 'utf8')));
+  } catch {
+    return {};
+  }
+}
+
+/** Merges and persists valid UI preference changes to disk. */
+function writeUiPrefs(patch) {
+  const updates = sanitizeUiPrefs(patch);
+  const merged = { ...readUiPrefs(), ...updates };
+  const file = resolveUiPrefsPath();
+  const payload = JSON.stringify(merged, null, 2);
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${process.pid}.tmp`;
+  try {
+    fs.writeFileSync(tmp, payload, 'utf8');
+    fs.renameSync(tmp, file);
+  } catch {
+    try { fs.rmSync(tmp, { force: true }); } catch {}
+    fs.writeFileSync(file, payload, 'utf8');
+  }
+  return merged;
+}
+
 module.exports = {
   collect,
   scanFiles,
   pythonScan,
   resolvePython,
   getImageDimensions,
-  calcImageTokens
+  calcImageTokens,
+  sanitizeUiPrefs,
+  readUiPrefs,
+  writeUiPrefs
 };

@@ -6,7 +6,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { scanFiles, getImageDimensions } = require('./meter-collector');
+const { scanFiles, getImageDimensions, readUiPrefs, writeUiPrefs, sanitizeUiPrefs } = require('./meter-collector');
 const { loadAsarEngine } = require('./asar-engine');
 const { install } = require('./install');
 const { restore } = require('./restore');
@@ -98,9 +98,23 @@ test('ASAR patch & lossless restore integrity verification (minimal core modules
 
     const patchedPreload = asar.extractFile(targetAsar, 'dist/preload.js').toString('utf8');
     assert.ok(patchedPreload.includes('context-meter:scan'));
+    assert.ok(patchedPreload.includes('context-meter:save-prefs'));
     assert.ok(!patchedPreload.includes('check-update'));
     assert.ok(!patchedPreload.includes('launch-cli'));
     assert.ok(!patchedPreload.includes('token-history'));
+
+    assert.deepEqual(readUiPrefs(), {});
+    assert.deepEqual(
+      writeUiPrefs({ langMode: 'zh-TW', themeMode: 'dark', ignoredKey: 'evil', drawerOpen: 'bad' }),
+      { langMode: 'zh-TW', themeMode: 'dark' }
+    );
+    assert.deepEqual(writeUiPrefs({ drawerOpen: true }), {
+      langMode: 'zh-TW',
+      themeMode: 'dark',
+      drawerOpen: true
+    });
+    assert.deepEqual(readUiPrefs(), { langMode: 'zh-TW', themeMode: 'dark', drawerOpen: true });
+    assert.deepEqual(sanitizeUiPrefs(['not-an-object']), {});
 
     const res = await restore();
     assert.equal(res.restored, targetAsar);

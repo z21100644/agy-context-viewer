@@ -2,13 +2,14 @@
 const fs = require('fs');
 const path = require('path');
 const { ipcMain, app } = require('electron');
-const { collect } = require('./meter-collector');
+const { collect, readUiPrefs, writeUiPrefs } = require('./meter-collector');
 
 function getMeterSource() {
   try {
+    const prefsCode = `globalThis.__AGContextMeterPrefs = ${JSON.stringify(readUiPrefs())};`;
     const coreCode = fs.readFileSync(path.join(__dirname, 'meter-core.js'), 'utf8');
     const rendererCode = fs.readFileSync(path.join(__dirname, 'meter-renderer.js'), 'utf8');
-    return `${coreCode}\n${rendererCode}\ntrue;`;
+    return `${prefsCode}\n${coreCode}\n${rendererCode}\ntrue;`;
   } catch {
     return '';
   }
@@ -65,6 +66,15 @@ function registerIpcOnce() {
     if (!url) throw new Error(mainWinError(lang));
     try {
       return { ok: true, data: await collect(url.origin, id, { force: force === true, lang }) };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  });
+
+  ipcMain.handle('context-meter:save-prefs', async (event, patch) => {
+    if (!isLocalMainFrameSender(event)) throw new Error(mainWinError());
+    try {
+      return { ok: true, prefs: writeUiPrefs(patch) };
     } catch (e) {
       return { ok: false, error: e.message };
     }

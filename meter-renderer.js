@@ -1,5 +1,5 @@
 (function () {
-  const METER_VERSION = '1.0.1';
+  const METER_VERSION = '1.1.0';
 
   'use strict';
   if (location.protocol !== 'https:' || location.hostname !== '127.0.0.1') return;
@@ -1537,15 +1537,117 @@
   const el = id => shadow.getElementById(id);
 
   // ==========================================================================
-  // 0. 多語系偵測與切換 (English / 简体中文 / 繁體中文)
+  // 0. 跨重啟連接埠無關偏好持久化與多語系偵測 (English / 简体中文 / 繁體中文)
   // ==========================================================================
-  let currentLangMode = 'auto';
-  try {
-    const savedLang = typeof localStorage !== 'undefined' && localStorage.getItem('ag_lang_mode');
-    if (savedLang === 'auto' || savedLang === 'en' || savedLang === 'zh-CN' || savedLang === 'zh-TW') {
-      currentLangMode = savedLang;
+  const PREF_SPECS = {
+    langMode: {
+      storageKey: 'ag_lang_mode',
+      fallback: 'auto',
+      parse: v => (v === 'auto' || v === 'en' || v === 'zh-CN' || v === 'zh-TW' ? v : null),
+      toRaw: v => String(v)
+    },
+    themeMode: {
+      storageKey: 'ag_theme_mode',
+      fallback: 'auto',
+      parse: v => (v === 'auto' || v === 'light' || v === 'dark' ? v : null),
+      toRaw: v => String(v)
+    },
+    drawerOpen: {
+      storageKey: 'ag_ctx_drawer_open',
+      fallback: false,
+      parse: v => (typeof v === 'boolean' ? v : v === '1' || v === 'true' ? true : v === '0' || v === 'false' ? false : null),
+      toRaw: v => (v ? '1' : '0')
     }
-  } catch {}
+  };
+
+  function readCookieValue(name) {
+    try {
+      const rawCookie = typeof document !== 'undefined' && typeof document.cookie === 'string' ? document.cookie : '';
+      if (!rawCookie) return null;
+      const prefix = `${encodeURIComponent(name)}=`;
+      for (const part of rawCookie.split(';')) {
+        const trimmed = part.trim();
+        if (trimmed.startsWith(prefix)) return decodeURIComponent(trimmed.slice(prefix.length));
+      }
+    } catch {}
+    return null;
+  }
+
+  function writeCookieValue(name, rawVal) {
+    try {
+      if (typeof document === 'undefined' || !('cookie' in document)) return;
+      const secure = location.protocol === 'https:' ? '; Secure' : '';
+      document.cookie = `${encodeURIComponent(name)}=${encodeURIComponent(rawVal)}; path=/; max-age=31536000; SameSite=Lax${secure}`;
+    } catch {}
+  }
+
+  function hasPrefsBridge() {
+    return Boolean(
+      (typeof window !== 'undefined' && typeof window.contextMeterAPI?.savePrefs === 'function') ||
+        (typeof window !== 'undefined' && window.__AGContextMeterLive?.port)
+    );
+  }
+
+  function pushPrefsToHost(patch) {
+    try {
+      if (typeof window !== 'undefined' && typeof window.contextMeterAPI?.savePrefs === 'function') {
+        void Promise.resolve(window.contextMeterAPI.savePrefs(patch)).catch(() => {});
+        return;
+      }
+      const live = typeof window !== 'undefined' ? window.__AGContextMeterLive : null;
+      if (live?.port && typeof fetch === 'function') {
+        void fetch(`http://127.0.0.1:${live.port}/prefs`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'X-AG-Context-Token': live.token },
+          body: JSON.stringify(patch)
+        }).catch(() => {});
+      }
+    } catch {}
+  }
+
+  function loadPref(prefKey) {
+    const spec = PREF_SPECS[prefKey];
+    let lsVal = null;
+    try {
+      lsVal = spec.parse(typeof localStorage !== 'undefined' ? localStorage.getItem(spec.storageKey) : null);
+    } catch {}
+    const cookieVal = spec.parse(readCookieValue(spec.storageKey));
+    const diskVal = spec.parse(globalThis.__AGContextMeterPrefs?.[prefKey]);
+
+    const candidates = hasPrefsBridge() ? [diskVal, cookieVal, lsVal] : [lsVal, cookieVal, diskVal];
+    const resolved = candidates.find(v => v !== null);
+    if (resolved === undefined) return spec.fallback;
+
+    const rawStr = spec.toRaw(resolved);
+    try {
+      if (typeof localStorage !== 'undefined' && localStorage.getItem(spec.storageKey) !== rawStr) {
+        localStorage.setItem(spec.storageKey, rawStr);
+      }
+    } catch {}
+    writeCookieValue(spec.storageKey, rawStr);
+    if (diskVal === null && hasPrefsBridge()) {
+      pushPrefsToHost({ [prefKey]: resolved });
+    }
+    return resolved;
+  }
+
+  function savePref(prefKey, value) {
+    const spec = PREF_SPECS[prefKey];
+    const valid = spec.parse(value);
+    if (valid === null) return;
+    const rawStr = spec.toRaw(valid);
+    try {
+      localStorage?.setItem(spec.storageKey, rawStr);
+    } catch {}
+    writeCookieValue(spec.storageKey, rawStr);
+    if (!globalThis.__AGContextMeterPrefs || typeof globalThis.__AGContextMeterPrefs !== 'object') {
+      globalThis.__AGContextMeterPrefs = {};
+    }
+    globalThis.__AGContextMeterPrefs[prefKey] = valid;
+    pushPrefsToHost({ [prefKey]: valid });
+  }
+
+  let currentLangMode = loadPref('langMode');
 
   function detectHostLocale() {
     try {
@@ -1643,25 +1745,15 @@
     disposed: false,
     layoutMode: 'wide',
     tooltipOpen: false,
-    drawerOpen: false
+    drawerOpen: loadPref('drawerOpen')
   };
-
-  try {
-    state.drawerOpen = typeof localStorage !== 'undefined' && localStorage.getItem('ag_ctx_drawer_open') === '1';
-  } catch {}
 
   const route = () => location.pathname.match(/^\/c\/([a-f\d-]{36})(?:\/|$)/i)?.[1] || null;
 
   // ==========================================================================
   // 1. 主題偵測、多語系靜態標籤同步與 Windows 標題列色彩同步
   // ==========================================================================
-  let currentThemeMode = 'auto';
-  try {
-    const savedMode = typeof localStorage !== 'undefined' && localStorage.getItem('ag_theme_mode');
-    if (savedMode === 'light' || savedMode === 'dark' || savedMode === 'auto') {
-      currentThemeMode = savedMode;
-    }
-  } catch {}
+  let currentThemeMode = loadPref('themeMode');
 
   function parseLuminance(colorStr) {
     if (!colorStr || typeof colorStr !== 'string') return null;
@@ -1759,14 +1851,15 @@
     syncNativeOverlayTheme();
   }
 
-  function cycleTheme() {
-    if (currentThemeMode === 'auto') currentThemeMode = 'light';
-    else if (currentThemeMode === 'light') currentThemeMode = 'dark';
-    else currentThemeMode = 'auto';
-    try {
-      localStorage?.setItem('ag_theme_mode', currentThemeMode);
-    } catch {}
+  function applyThemeMode(nextMode) {
+    currentThemeMode = nextMode;
+    savePref('themeMode', currentThemeMode);
     applyTheme();
+  }
+
+  function cycleTheme() {
+    const next = currentThemeMode === 'auto' ? 'light' : currentThemeMode === 'light' ? 'dark' : 'auto';
+    applyThemeMode(next);
   }
 
   let initialized = false;
@@ -1825,16 +1918,22 @@
     if (initialized) render();
   }
 
+  function applyLanguageMode(nextMode) {
+    const prevLang = resolveLanguage();
+    currentLangMode = nextMode;
+    savePref('langMode', currentLangMode);
+    applyStaticLabels();
+    if (prevLang !== resolveLanguage() && state.route && state.scan?.session?.unknownFiles > 0 && !state.scanBusy) {
+      void scan(state.generation, state.route, false);
+    }
+  }
+
   function cycleLanguage() {
     const detected = detectHostLocale();
     const active = resolveLanguage();
     const idx = LANG_CYCLE.indexOf(active);
     const nextLang = LANG_CYCLE[(idx + 1) % LANG_CYCLE.length];
-    currentLangMode = nextLang === detected ? 'auto' : nextLang;
-    try {
-      localStorage?.setItem('ag_lang_mode', currentLangMode);
-    } catch {}
-    applyStaticLabels();
+    applyLanguageMode(nextLang === detected ? 'auto' : nextLang);
   }
 
   let themeObserver = null;
@@ -2282,11 +2381,7 @@
     const btn = el('btn-toggle-details');
     if (body) body.hidden = !state.drawerOpen;
     btn?.setAttribute('aria-expanded', String(state.drawerOpen));
-    if (persist) {
-      try {
-        localStorage?.setItem('ag_ctx_drawer_open', state.drawerOpen ? '1' : '0');
-      } catch {}
-    }
+    if (persist) savePref('drawerOpen', state.drawerOpen);
   }
 
   setDrawerExpanded(state.drawerOpen, false);
@@ -3185,32 +3280,22 @@
     theme: () => resolveTheme(),
     setTheme: mode => {
       if (mode === 'light' || mode === 'dark' || mode === 'auto') {
-        currentThemeMode = mode;
-        try {
-          localStorage?.setItem('ag_theme_mode', mode);
-        } catch {}
-        applyTheme();
+        applyThemeMode(mode);
       }
     },
     language: () => resolveLanguage(),
     languageMode: () => currentLangMode,
     setLanguage: mode => {
       if (mode === 'auto') {
-        currentLangMode = 'auto';
-      } else if (typeof mode === 'string' && mode.trim()) {
-        const norm = normalizeLang(mode, '');
-        if (norm === 'en' || norm === 'zh-CN' || norm === 'zh-TW') {
-          currentLangMode = norm;
-        } else {
-          return;
-        }
-      } else {
+        applyLanguageMode('auto');
         return;
       }
-      try {
-        localStorage?.setItem('ag_lang_mode', currentLangMode);
-      } catch {}
-      applyStaticLabels();
+      if (typeof mode === 'string' && mode.trim()) {
+        const norm = normalizeLang(mode, '');
+        if (norm === 'en' || norm === 'zh-CN' || norm === 'zh-TW') {
+          applyLanguageMode(norm);
+        }
+      }
     },
     getLayoutMode: () => state.layoutMode,
     setAvailableWidthForTest: width => {

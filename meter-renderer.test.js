@@ -155,11 +155,20 @@ function createHarness(options = {}) {
   if (options.htmlLang) docEl.setAttribute('lang', options.htmlLang);
 
   const byId = new Map();
+  const cookieJar = options.cookieJar || new Map();
   const document = {
     hidden: false,
     head,
     body,
     documentElement: docEl,
+    get cookie() {
+      return [...cookieJar.entries()].map(([k, v]) => `${k}=${v}`).join('; ');
+    },
+    set cookie(raw) {
+      const first = String(raw || '').split(';')[0] || '';
+      const eq = first.indexOf('=');
+      if (eq > 0) cookieJar.set(first.slice(0, eq).trim(), first.slice(eq + 1).trim());
+    },
     createElement(tag) {
       return makeNode(tag);
     },
@@ -197,7 +206,7 @@ function createHarness(options = {}) {
   const scanResult = options.scanResult || {
     ok: true,
     data: {
-      version: '1.0.1',
+      version: '1.1.0',
       conversation: '11111111-2222-3333-4444-555555555555',
       scannedAt: Date.now(),
       latest: null,
@@ -236,6 +245,23 @@ function createHarness(options = {}) {
   };
 
   let scanCalls = 0;
+  const savedPrefPatches = [];
+  const contextMeterAPI = {
+    scan: async () => {
+      scanCalls++;
+      return scanResult;
+    },
+    syncOverlay: async () => ({ ok: true })
+  };
+  if (options.enableSavePrefs) {
+    contextMeterAPI.savePrefs = async patch => {
+      savedPrefPatches.push(patch);
+      if (options.diskPrefs && typeof options.diskPrefs === 'object') {
+        Object.assign(options.diskPrefs, patch);
+      }
+      return { ok: true };
+    };
+  }
   const windowObj = {
     innerWidth: 1280,
     innerHeight: 800,
@@ -243,13 +269,7 @@ function createHarness(options = {}) {
     location,
     document,
     __APP_CONFIG__: { csrfToken: 'test-csrf' },
-    contextMeterAPI: {
-      scan: async () => {
-        scanCalls++;
-        return scanResult;
-      },
-      syncOverlay: async () => ({ ok: true })
-    },
+    contextMeterAPI,
     localStorage: {
       getItem: k => (storage.has(k) ? storage.get(k) : null),
       setItem: (k, v) => storage.set(k, String(v))
@@ -290,6 +310,9 @@ function createHarness(options = {}) {
     console
   };
   sandbox.globalThis = sandbox;
+  if (options.initialPrefs) {
+    sandbox.__AGContextMeterPrefs = { ...options.initialPrefs };
+  }
 
   vm.createContext(sandbox);
   vm.runInContext(coreSource, sandbox);
@@ -302,6 +325,8 @@ function createHarness(options = {}) {
   return {
     sandbox,
     storage,
+    cookieJar,
+    savedPrefPatches,
     host,
     el,
     flush,
@@ -558,5 +583,76 @@ test('High occupancy (>=90%) alert banner renders /compact command chip in all 3
     }
   } finally {
     h.dispose();
+  }
+});
+
+test('Language, theme, and drawer preferences persist across restarts with new ephemeral port origins', async () => {
+  const sharedDiskPrefs = {};
+  const sharedCookies = new Map();
+
+  // Session 1: user switches to zh-TW, dark theme, and opens breakdown drawer
+  const h1 = createHarness({
+    pathname: '/',
+    htmlLang: 'en',
+    navigatorLanguage: 'zh-TW',
+    enableSavePrefs: true,
+    diskPrefs: sharedDiskPrefs,
+    cookieJar: sharedCookies
+  });
+  try {
+    await h1.flush();
+    assert.equal(h1.sandbox.__AGContextMeter.language(), 'en');
+    h1.el('lang-toggle').click(); // en -> zh-CN
+    h1.el('lang-toggle').click(); // zh-CN -> zh-TW
+    h1.el('theme-toggle').click(); // auto -> light
+    h1.el('theme-toggle').click(); // light -> dark
+    h1.el('btn-toggle-details').click(); // open drawer
+
+    assert.equal(sharedDiskPrefs.langMode, 'zh-TW');
+    assert.equal(sharedDiskPrefs.themeMode, 'dark');
+    assert.equal(sharedDiskPrefs.drawerOpen, true);
+    assert.equal(sharedCookies.get('ag_lang_mode'), 'zh-TW');
+  } finally {
+    h1.dispose();
+  }
+
+  // Session 2 (restart on new port: empty localStorage, html[lang="en"], hydrated from disk prefs)
+  const h2 = createHarness({
+    pathname: '/',
+    htmlLang: 'en',
+    navigatorLanguage: 'zh-TW',
+    initialStorage: {},
+    initialPrefs: sharedDiskPrefs,
+    enableSavePrefs: true
+  });
+  try {
+    await h2.flush();
+    assert.equal(h2.sandbox.__AGContextMeter.languageMode(), 'zh-TW');
+    assert.equal(h2.sandbox.__AGContextMeter.language(), 'zh-TW');
+    assert.equal(h2.el('lang-toggle').textContent, '繁');
+    assert.equal(h2.el('panel-title').textContent, '上下文視窗');
+    assert.equal(h2.sandbox.__AGContextMeter.theme(), 'dark');
+    assert.equal(h2.el('drawer-body').hidden, false);
+    assert.equal(h2.storage.get('ag_lang_mode'), 'zh-TW');
+  } finally {
+    h2.dispose();
+  }
+
+  // Session 3 (upgrade migration: empty localStorage & empty disk prefs, restored from port-agnostic cookie)
+  const migratedDisk = {};
+  const h3 = createHarness({
+    pathname: '/',
+    htmlLang: 'en',
+    initialStorage: {},
+    cookieJar: sharedCookies,
+    enableSavePrefs: true,
+    diskPrefs: migratedDisk
+  });
+  try {
+    await h3.flush();
+    assert.equal(h3.sandbox.__AGContextMeter.language(), 'zh-TW');
+    assert.equal(migratedDisk.langMode, 'zh-TW');
+  } finally {
+    h3.dispose();
   }
 });

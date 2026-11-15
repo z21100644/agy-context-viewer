@@ -5,7 +5,7 @@ const path = require('path');
 const http = require('http');
 const crypto = require('crypto');
 const { connect } = require('./local-api');
-const { collect } = require('./meter-collector');
+const { collect, writeUiPrefs } = require('./meter-collector');
 const { getStateDir } = require('./asar-engine');
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -32,7 +32,7 @@ const MAX_BODY_BYTES = 64 * 1024;
       res.end();
       return;
     }
-    if (req.method !== 'POST' || req.url !== '/scan' || req.headers['x-ag-context-token'] !== secret) {
+    if (req.method !== 'POST' || (req.url !== '/scan' && req.url !== '/prefs') || req.headers['x-ag-context-token'] !== secret) {
       res.writeHead(403);
       res.end();
       return;
@@ -56,8 +56,12 @@ const MAX_BODY_BYTES = 64 * 1024;
       if (exceeded) return;
       try {
         const request = JSON.parse(body || '{}');
-        const data = await collect(api.origin, request.id, { force: request.force === true, lang: request.lang });
         res.setHeader('Content-Type', 'application/json');
+        if (req.url === '/prefs') {
+          res.end(JSON.stringify({ ok: true, prefs: writeUiPrefs(request) }));
+          return;
+        }
+        const data = await collect(api.origin, request.id, { force: request.force === true, lang: request.lang });
         res.end(JSON.stringify({ ok: true, data }));
       } catch (e) {
         res.setHeader('Content-Type', 'application/json');

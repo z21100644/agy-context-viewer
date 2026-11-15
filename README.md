@@ -7,7 +7,7 @@ A lightweight, 100% local, zero-dependency context window & generation speed mon
 ## Key Features
 
 - **Adaptive Topbar Capsule**: Combines a live occupancy ring, tabular percentage, and streaming generation rate in a single pill (`wide` / `compact` / `ring-only` hysteresis collapse; automatically hides idle speed placeholders).
-- **Multi-Language UI & CLI (`en` / `zh-CN` / `zh-TW`)**: Automatically follows your IDE / system locale (defaulting to English for other locales), with an instant one-click `EN` / `简` / `繁` switcher in the panel header persisted in `localStorage`, plus `--lang` CLI support.
+- **Multi-Language UI & CLI (`en` / `zh-CN` / `zh-TW`)**: Automatically follows your IDE / system locale (defaulting to English for other locales), with an instant one-click `EN` / `简` / `繁` switcher in the panel header persisted across restarts, plus `--lang` CLI support.
 - **Core Capacity & High-Occupancy Alerts**: Displays real-time context occupancy, cache read / fresh input / model output breakdown, and remaining tokens; surfaces a concise single-line alert with a `/compact` command chip at `>= 90%` occupancy or on request errors.
 - **4-Column Generation Telemetry & Speed Tiers**: Side-by-side **Speed** (end-to-end including TTFT, graded as `Fast` `>=60`, `Smooth` `>=25`, `Fair` `>=10`, `Slow` `<10 tok/s`; hover to inspect pure streaming rate and TTFT share), **TTFT**, **Duration**, and **Output**.
 - **Active Context Breakdown Drawer**: On-demand stacked bar and category shares converging to `100%` (System Prompt & Tools, Tool Calls & Outputs, Model Responses, Thinking Process, User Messages, Compacted Summaries, Attachments), automatically scoped from the most recent `/compact` checkpoint.
